@@ -1,16 +1,14 @@
-#![feature(slice_patterns)]
-extern crate num_bigint;
-extern crate num_traits;
-extern crate pathfinding;
+#![feature(i128_type)]
+// extern crate num_bigint;
+// extern crate num_traits;
 
-use pathfinding::astar::astar;
-use num_bigint::BigUint;
-use num_traits::{One, Zero};
+// use num_bigint::BigUint;
+// use num_traits::{One, Zero};
 
 struct PositionFinder {
     output: Vec<i8>,
     previous_choises: Vec<i8>,
-    tail_length: i8,
+    tail_length: usize,
     done: bool,
 }
 
@@ -22,7 +20,7 @@ enum Moves {
 }
 
 impl PositionFinder {
-    fn new(previous_choises: Vec<i8>, tail_length: i8) -> PositionFinder {
+    fn new(previous_choises: Vec<i8>, tail_length: usize) -> PositionFinder {
         PositionFinder {
             output: vec![-1],
             previous_choises: previous_choises,
@@ -47,7 +45,7 @@ impl Iterator for PositionFinder {
             {
             } else if *self.output.last().unwrap() >= 16 {
                 self.output.pop();
-            } else if self.output.len() < (self.tail_length as usize + 2)
+            } else if self.output.len() < (self.tail_length + 2)
                 && need_backup(
                     &self.previous_choises,
                     *self.output.last().unwrap(),
@@ -68,24 +66,30 @@ impl Iterator for PositionFinder {
     }
 }
 
-fn need_backup(prev_pos_choises: &Vec<i8>, check_pos: i8, tail_length: i8) -> bool {
+fn need_backup(prev_pos_choises: &Vec<i8>, check_pos: i8, tail_length: usize) -> bool {
     let check_pos_x = check_pos % 4;
     let check_pos_y = check_pos / 4;
     for choise in prev_pos_choises {
         let prev_pos_x = choise % 4;
         let prev_pos_y = choise / 4;
-        if (prev_pos_x - check_pos_x).abs() + (prev_pos_y - check_pos_y).abs() <= tail_length {
+        if (prev_pos_x - check_pos_x).abs() + (prev_pos_y - check_pos_y).abs() <= tail_length as i8
+        {
             return true;
         }
     }
     false
 }
 
-fn could_block_all(head_positions: &Vec<i8>, chosen_positions: &Vec<i8>, tail_length: i8) -> bool {
+fn could_block_all(
+    head_positions: &Vec<i8>,
+    chosen_positions: &Vec<i8>,
+    tail_length: usize,
+) -> bool {
+    let mut positions_taken: Vec<i8> = Vec::with_capacity(tail_length + 1);
     for head in head_positions {
         let head_x = head % 4;
         let head_y = head / 4;
-        let mut moves: Vec<i8> = vec![0; tail_length as usize];
+        let mut moves: [i8; 15] = [0; 15];
         'outer: loop {
             let mut current_x = head_x;
             let mut current_y = head_y;
@@ -94,12 +98,12 @@ fn could_block_all(head_positions: &Vec<i8>, chosen_positions: &Vec<i8>, tail_le
             while (i == 0 && moves[0] == 4) || (i != 0 && moves[i] == 3) {
                 moves[i] = 0;
                 i += 1;
-                if i == tail_length as usize {
+                if i == tail_length {
                     break 'outer;
                 }
                 moves[i] += 1;
             }
-            let mut positions_taken: Vec<i8> = Vec::with_capacity(tail_length as usize + 1);
+            positions_taken.clear();
             positions_taken.push(*head);
 
             // Handle the first move differently as it can move in four directions
@@ -140,9 +144,10 @@ fn could_block_all(head_positions: &Vec<i8>, chosen_positions: &Vec<i8>, tail_le
                 _ => unreachable!(),
             }
             positions_taken.push(current_y * 4 + current_x);
-            for direction in moves.iter().skip(1) {
-                let chosen_move;
-                chosen_move = match (last_move, *direction) {
+
+
+            for direction in moves.iter().take(tail_length).skip(1) {
+                let chosen_move = match (last_move, *direction) {
                     (0, 0) => Moves::Left,
                     (0, 1) => Moves::Up,
                     (0, 2) => Moves::Right,
@@ -206,10 +211,9 @@ fn could_block_all(head_positions: &Vec<i8>, chosen_positions: &Vec<i8>, tail_le
 }
 
 fn main() {
-    let mut f0: BigUint = Zero::zero();
-    let f1: BigUint = One::one();
-    for _ in PositionFinder::new(vec![3, 10], 6) {
-        f0 += &f1;
+    let mut f0: u128 = 0;
+    for _ in PositionFinder::new(vec![3, 10], 7) {
+        f0 += 1;
     }
     println!("{}", f0);
 }
