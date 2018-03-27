@@ -5,13 +5,13 @@
 // use num_bigint::BigUint;
 // use num_traits::{One, Zero};
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 struct PositionFinder {
-    output: Vec<i8>,
-    previous_choises: Vec<i8>,
+    output: Vec<u8>,
+    previous_choises: Vec<u8>,
     tail_length: usize,
-    snakes_calculated: HashMap<i8, Vec<Vec<i8>>>,
+    snakes_calculated: HashMap<u8, [Vec<usize>; 16]>,
     done: bool,
 }
 
@@ -23,9 +23,9 @@ enum Moves {
 }
 
 impl PositionFinder {
-    fn new(previous_choises: Vec<i8>, tail_length: usize) -> PositionFinder {
+    fn new(previous_choises: Vec<u8>, tail_length: usize) -> PositionFinder {
         PositionFinder {
-            output: vec![-1],
+            output: vec![0],
             previous_choises: previous_choises,
             tail_length: tail_length,
             snakes_calculated: HashMap::new(),
@@ -35,20 +35,21 @@ impl PositionFinder {
 }
 
 impl Iterator for PositionFinder {
-    type Item = Vec<i8>;
+    type Item = Vec<u8>;
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             if self.done {
                 return None;
             }
-            *self.output.last_mut().unwrap() += 1;
             if self.output[0] == 16 {
                 self.done = true;
                 return None;
             } else if self.output[0..(self.output.len() - 1)].contains(self.output.last().unwrap())
             {
+                *self.output.last_mut().unwrap() += 1;
             } else if *self.output.last().unwrap() >= 16 {
                 self.output.pop();
+                *self.output.last_mut().unwrap() += 1;
             } else if self.output.len() < (self.tail_length + 2)
                 && need_backup(
                     &self.previous_choises,
@@ -63,44 +64,48 @@ impl Iterator for PositionFinder {
                 ) {
                 for backup in 0..16 {
                     if !self.output.contains(&backup) {
-                        self.output.push(backup - 1);
+                        self.output.push(backup);
                         break;
                     }
                 }
             } else {
-                return Some(self.output.clone());
+                let out = self.output.clone();
+                *self.output.last_mut().unwrap() += 1;
+                return Some(out);
             }
         }
     }
 }
 
-fn need_backup(prev_pos_choises: &Vec<i8>, check_pos: i8, tail_length: usize) -> bool {
+#[inline(always)]
+fn need_backup(prev_pos_choises: &Vec<u8>, check_pos: u8, tail_length: usize) -> bool {
     let check_pos_x = check_pos % 4;
     let check_pos_y = check_pos / 4;
-    for choise in prev_pos_choises {
+    prev_pos_choises.iter().any(|choise| {
         let prev_pos_x = choise % 4;
         let prev_pos_y = choise / 4;
-        if (prev_pos_x - check_pos_x).abs() + (prev_pos_y - check_pos_y).abs() <= tail_length as i8
+        if (prev_pos_x as i8 - check_pos_x as i8).abs()
+            + (prev_pos_y as i8 - check_pos_y as i8).abs() <= tail_length as i8
         {
             return true;
         }
-    }
-    false
+        false
+    })
 }
 
 fn could_block_all(
-    head_positions: &Vec<i8>,
-    chosen_positions: &Vec<i8>,
-    snakes_calculated: &mut HashMap<i8, Vec<Vec<i8>>>,
+    head_positions: &Vec<u8>,
+    chosen_positions: &Vec<u8>,
+    snakes_calculated: &mut HashMap<u8, [Vec<usize>; 16]>,
     tail_length: usize,
 ) -> bool {
-    for head in head_positions {
+    'outer_for_loop: for head in head_positions {
         let possible_snakes = snakes_calculated.entry(*head).or_insert_with(|| {
-            let mut move_container: Vec<Vec<i8>> = Vec::with_capacity(tail_length + 1);
-            let mut positions_taken: Vec<i8> = Vec::with_capacity(tail_length + 1);
+            let mut move_container: Vec<Vec<u8>> = Vec::with_capacity(tail_length + 1);
+            let mut positions_taken: Vec<u8> = Vec::with_capacity(tail_length + 1);
             let head_x = head % 4;
             let head_y = head / 4;
-            let mut moves: [i8; 15] = [0; 15];
+            let mut moves: [u8; 15] = [0; 15];
             'outer: loop {
                 let mut current_x = head_x;
                 let mut current_y = head_y;
@@ -208,17 +213,61 @@ fn could_block_all(
                 positions_taken.sort();
                 move_container.push(positions_taken.clone());
             }
-            move_container
-        });
-        for snake in possible_snakes {
-            let mut all_blocked = true;
-            for chosen in chosen_positions {
-                if !snake.binary_search(chosen).is_ok() {
-                    all_blocked = false;
-                    break;
+            // Convert the move container to a more efficient format
+            let mut output: [Vec<usize>; 16] = [
+                vec![],
+                vec![],
+                vec![],
+                vec![],
+                vec![],
+                vec![],
+                vec![],
+                vec![],
+                vec![],
+                vec![],
+                vec![],
+                vec![],
+                vec![],
+                vec![],
+                vec![],
+                vec![],
+            ];
+            for (i, snake) in move_container.iter().enumerate() {
+                for position in snake {
+                    output[*position as usize].push(i);
                 }
             }
-            if all_blocked {
+            output
+        });
+        let mut vectors_to_search: Vec<(&Vec<usize>, usize)> =
+            Vec::with_capacity(chosen_positions.len());
+        for chosen in chosen_positions {
+            let vec = &possible_snakes[*chosen as usize];
+            if vec.len() == 0 {
+                continue 'outer_for_loop;
+            }
+            vectors_to_search.push((vec, 0));
+        }
+        let mut max: usize = 0;
+        let mut same;
+        'outer_loop: loop {
+            same = true;
+            for &mut (vec, ref mut index) in vectors_to_search.iter_mut() {
+                if vec[*index] > max {
+                    same = false;
+                    max = vec[*index]
+                } else if vec[*index] < max {
+                    same = false;
+                    while vec[*index] < max {
+                        *index += 1;
+                        if *index >= vec.len() {
+                            break 'outer_loop;
+                        }
+                    }
+                    max = vec[*index];
+                }
+            }
+            if same {
                 return true;
             }
         }
@@ -228,7 +277,7 @@ fn could_block_all(
 
 fn main() {
     let mut f0: u128 = 0;
-    for _ in PositionFinder::new(vec![3, 10], 7) {
+    for _ in PositionFinder::new(vec![3, 10], 8) {
         f0 += 1;
     }
     println!("{}", f0);
