@@ -175,7 +175,7 @@ fn could_block_all(
                     last_move = *direction;
                     match chosen_move {
                         Moves::Up => {
-                            if current_x == 0 {
+                            if current_y == 0 {
                                 continue 'outer;
                             }
                             current_y -= 1;
@@ -228,7 +228,7 @@ fn could_block_all(
 
 fn main() {
     let mut f0: u128 = 0;
-    for _ in PositionFinder::new(vec![3, 10], 8) {
+    for _ in PositionFinder::new(vec![3, 10], 7) {
         f0 += 1;
     }
     println!("{}", f0);
