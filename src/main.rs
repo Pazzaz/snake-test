@@ -1,10 +1,4 @@
 #![feature(i128_type)]
-// extern crate num_bigint;
-// extern crate num_traits;
-
-// use num_bigint::BigUint;
-// use num_traits::{One, Zero};
-
 use std::collections::HashMap;
 
 struct PositionFinder {
@@ -37,19 +31,30 @@ impl PositionFinder {
 impl Iterator for PositionFinder {
     type Item = Vec<u8>;
     fn next(&mut self) -> Option<Self::Item> {
+        // We don't need to do anything if we're done
+        if self.done {
+            return None;
+        }
         loop {
-            if self.done {
-                return None;
-            }
-            if self.output[0] == 16 {
-                self.done = true;
-                return None;
-            } else if self.output[0..(self.output.len() - 1)].contains(self.output.last().unwrap())
-            {
-                *self.output.last_mut().unwrap() += 1;
-            } else if *self.output.last().unwrap() >= 16 {
+            // When we've iterated up to 16 then we've gone through all values
+            // needed for that positions and can increment the previous position
+            if *self.output.last().unwrap() >= 16 {
                 self.output.pop();
                 *self.output.last_mut().unwrap() += 1;
+                if self.output[0] == 16 {
+                    self.done = true;
+                    return None;
+                }
+
+            // If the last element of our output exists elsewhere in our array,
+            // it's an invalid value and we need to get a new one
+            } else if {
+                let (last, rest) = self.output.split_last().unwrap();
+                rest.contains(last)
+            } {
+                *self.output.last_mut().unwrap() += 1;
+
+            // Add another backup value if we need it
             } else if self.output.len() < (self.tail_length + 2)
                 && need_backup(
                     &self.previous_choises,
@@ -68,9 +73,14 @@ impl Iterator for PositionFinder {
                         break;
                     }
                 }
+
+            // Our output is valid
             } else {
                 let out = self.output.clone();
                 *self.output.last_mut().unwrap() += 1;
+                if self.output[0] == 16 {
+                    self.done = true;
+                }
                 return Some(out);
             }
         }
@@ -277,7 +287,7 @@ fn could_block_all(
 
 fn main() {
     let mut f0: u128 = 0;
-    for _ in PositionFinder::new(vec![3, 10], 8) {
+    for _ in PositionFinder::new(vec![3, 10], 7) {
         f0 += 1;
     }
     println!("{}", f0);
