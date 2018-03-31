@@ -4,5 +4,4 @@ version = "0.1.0"
 authors = ["Pazzaz <pazzaz.sundqvist@gmail.com>"]
 
 [dependencies]
-# num-bigint = "0.1"
-# num-traits = "0.1"
+fnv = "1.0.6"
