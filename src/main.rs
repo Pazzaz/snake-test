@@ -358,16 +358,23 @@ fn count_down_tree(
                     ProgressStyle::default_bar()
                         .template("[{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}"),
                 );
-                bar.set_message(&format!("Horizontal:Top : {}", tail_length));
-                for layer in possible_tops {
-                    bar.inc(1);
-                    top_sum += count_down_tree(tail_length + 1, &layer, snakes_calculated);
-                }
-                bar.set_message(&format!("Horizontal:Middle : {}", tail_length));
-                for layer in possible_middles {
-                    bar.inc(1);
-                    middle_sum += count_down_tree(tail_length + 1, &layer, snakes_calculated);
-                }
+                rayon::join(
+                    || {
+                        bar.set_message(&format!("Horizontal:Top : {}", tail_length));
+                        for layer in possible_tops {
+                            bar.inc(1);
+                            top_sum += count_down_tree(tail_length + 1, &layer, snakes_calculated);
+                        }
+                    },
+                    || {
+                        bar.set_message(&format!("Horizontal:Middle : {}", tail_length));
+                        for layer in possible_middles {
+                            bar.inc(1);
+                            middle_sum +=
+                                count_down_tree(tail_length + 1, &layer, snakes_calculated);
+                        }
+                    },
+                );
                 bar.finish_and_clear();
             }
 
@@ -405,16 +412,23 @@ fn count_down_tree(
                     ProgressStyle::default_bar()
                         .template("[{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}"),
                 );
-                bar.set_message(&format!("Vertical:Side : {}", tail_length));
-                for layer in possible_sides {
-                    bar.inc(1);
-                    side_sum += count_down_tree(tail_length + 1, &layer, snakes_calculated);
-                }
-                bar.set_message(&format!("Vertical:Middle : {}", tail_length));
-                for layer in possible_middles {
-                    bar.inc(1);
-                    middle_sum += count_down_tree(tail_length + 1, &layer, snakes_calculated);
-                }
+                rayon::join(
+                    || {
+                        bar.set_message(&format!("Vertical:Side : {}", tail_length));
+                        for layer in possible_sides {
+                            bar.inc(1);
+                            side_sum += count_down_tree(tail_length + 1, &layer, snakes_calculated);
+                        }
+                    },
+                    || {
+                        bar.set_message(&format!("Vertical:Middle : {}", tail_length));
+                        for layer in possible_middles {
+                            bar.inc(1);
+                            middle_sum +=
+                                count_down_tree(tail_length + 1, &layer, snakes_calculated);
+                        }
+                    },
+                );
                 bar.finish_and_clear();
             }
 
