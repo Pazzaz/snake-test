@@ -270,6 +270,7 @@ fn get_valid_snakes(tail_length: usize, head: u8) -> FnvHashSet<[bool; MAP_WIDTH
 // [false, true,  false, false]
 // [false, false, true,  false]
 // [false, false, false, false]
+//
 fn insert_permutations(
     mut list: [bool; MAP_WIDTH * MAP_WIDTH],
     possible_blocks: &mut FnvHashSet<[bool; MAP_WIDTH * MAP_WIDTH]>,
@@ -724,40 +725,44 @@ fn count_down_tree(
     }
 }
 
-enum Symmetry {
-    // aba
-    // bcb
-    // aba
-    Full,
 
-    // abc
-    // def
-    // abc
+// 0 1 2
+// 3 4 5
+// 6 7 8
+enum Symmetry {
+    // a b a
+    // b c b
+    // a b a
+    Full,
+    
+    // a b c
+    // d e f
+    // a b c
     Horizontal,
 
-    // ada
-    // beb
-    // cfc
+    // a d a
+    // b e b
+    // c f c
     Vertical,
 
-    // aba
-    // cdc
-    // aba
+    // a b a
+    // c d c
+    // a b a
     Plus,
 
-    // dab
-    // aec
-    // bcf
+    // d a b
+    // a e c
+    // b c f
     DiagonalDown,
 
-    // abd
-    // cec
-    // fba
+    // a b d
+    // c e c
+    // f b a
     DiagonalUp,
 
-    // abc
-    // bdb
-    // cba
+    // a b c
+    // b d b
+    // c b a
     X,
 }
 
@@ -771,10 +776,10 @@ fn simplify(points: &[u8]) -> [bool; 9] {
 }
 
 fn symmetricality(points: [bool; 9]) -> Option<Symmetry> {
-    let horizontal = points[0] == points[6] && points[1] == points[7] && points[2] == points[8];
-    let vertical = points[0] == points[2] && points[3] == points[5] && points[6] == points[8];
+    let horizontal    = points[0] == points[6] && points[1] == points[7] && points[2] == points[8];
+    let vertical      = points[0] == points[2] && points[3] == points[5] && points[6] == points[8];
     let diagonal_down = points[1] == points[3] && points[2] == points[6] && points[5] == points[7];
-    let diagonal_up = points[0] == points[8] && points[1] == points[5] && points[3] == points[7];
+    let diagonal_up   = points[0] == points[8] && points[1] == points[5] && points[3] == points[7];
     if horizontal && vertical && diagonal_down && diagonal_up {
         Some(Symmetry::Full)
     } else if horizontal && vertical {
@@ -785,9 +790,9 @@ fn symmetricality(points: [bool; 9]) -> Option<Symmetry> {
         Some(Symmetry::Horizontal)
     } else if diagonal_down && diagonal_up {
         Some(Symmetry::X)
-    } else if vertical {
+    } else if diagonal_down {
         Some(Symmetry::DiagonalDown)
-    } else if horizontal {
+    } else if diagonal_up {
         Some(Symmetry::DiagonalUp)
     } else {
         None
