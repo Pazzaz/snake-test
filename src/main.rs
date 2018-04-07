@@ -497,6 +497,7 @@ fn count_down_tree(
                             corner_sum +=
                                 count_down_tree(tail_length + 1, &layer, snakes_calculated, &bars);
                         }
+                        bar.finish_and_clear();
                     },
                     || {
                         let bar = bars.add(ProgressBar::new(possible_sides.len() as u64));
@@ -509,6 +510,7 @@ fn count_down_tree(
                             side_sum +=
                                 count_down_tree(tail_length + 1, &layer, snakes_calculated, &bars);
                         }
+                        bar.finish_and_clear();
                     },
                 );
                 let bar = bars.add(ProgressBar::new(possible_middles.len() as u64));
