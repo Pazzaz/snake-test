@@ -5,3 +5,5 @@ authors = ["Pazzaz <pazzaz.sundqvist@gmail.com>"]
 
 [dependencies]
 fnv = "1.0.6"
+indicatif = "0.9.0"
+rayon = "1.0.1"
