@@ -3,9 +3,10 @@ extern crate indicatif;
 extern crate rayon;
 
 use fnv::FnvHashSet;
-use indicatif::ProgressBar;
-use indicatif::ProgressStyle;
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use std::collections::HashMap;
+use std::sync::Arc;
+use std::thread;
 const MAP_WIDTH: usize = 3;
 
 struct PositionFinder<'a, 'b, 'c> {
@@ -310,13 +311,26 @@ fn main() {
         }
     }
     println!("Done generating");
-    let corners = count_down_tree(1, &[0], &snakes_calculated);
-    println!("{}", corners);
-    let side = count_down_tree(1, &[1], &snakes_calculated);
-    println!("{}", side);
-    let middle = count_down_tree(1, &[4], &snakes_calculated);
-    println!("{}", middle);
-    let final_value: u128 = 4 * corners + 4 * side + middle;
+    let bars_orig = Arc::new(MultiProgress::new());
+    let pb = bars_orig.add(ProgressBar::new(3));
+    let bars = bars_orig.clone();
+    let mut final_value = 0;
+    let _ = thread::spawn(move || {
+        pb.tick();
+        let corners = count_down_tree(1, &[0], &snakes_calculated, &bars);
+        pb.inc(1);
+        println!("{}", corners);
+        let side = count_down_tree(1, &[1], &snakes_calculated, &bars);
+        pb.inc(1);
+        println!("{}", side);
+        let middle = count_down_tree(1, &[4], &snakes_calculated, &bars);
+        pb.inc(1);
+        println!("{}", middle);
+        final_value = 4 * corners + 4 * side + middle;
+        println!("{}", final_value);
+        pb.finish_with_message("done");
+    });
+    bars_orig.join_and_clear().unwrap();
     println!("{}", final_value);
 }
 
@@ -324,6 +338,7 @@ fn count_down_tree(
     tail_length: usize,
     previous_layer: &[u8],
     snakes_calculated: &HashMap<(u8, usize), FnvHashSet<[bool; MAP_WIDTH * MAP_WIDTH]>>,
+    bars: &MultiProgress,
 ) -> u128 {
     match symmetricality(simplify(&previous_layer)) {
         Some(Symmetry::Horizontal) => {
@@ -353,29 +368,34 @@ fn count_down_tree(
                 top_sum = possible_tops.len() as u128;
                 middle_sum = possible_middles.len() as u128;
             } else {
-                let bar = ProgressBar::new((possible_tops.len() + possible_middles.len()) as u64);
-                bar.set_style(
-                    ProgressStyle::default_bar()
-                        .template("[{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}"),
-                );
                 rayon::join(
                     || {
+                        let bar = bars.add(ProgressBar::new(possible_tops.len() as u64));
+                        bar.set_style(ProgressStyle::default_bar().template(
+                            "[{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}",
+                        ));
                         bar.set_message(&format!("Horizontal:Top : {}", tail_length));
                         for layer in possible_tops {
                             bar.inc(1);
-                            top_sum += count_down_tree(tail_length + 1, &layer, snakes_calculated);
+                            top_sum +=
+                                count_down_tree(tail_length + 1, &layer, snakes_calculated, &bars);
+                            bar.finish_and_clear();
                         }
                     },
                     || {
+                        let bar = bars.add(ProgressBar::new(possible_middles.len() as u64));
+                        bar.set_style(ProgressStyle::default_bar().template(
+                            "[{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}",
+                        ));
                         bar.set_message(&format!("Horizontal:Middle : {}", tail_length));
                         for layer in possible_middles {
                             bar.inc(1);
                             middle_sum +=
-                                count_down_tree(tail_length + 1, &layer, snakes_calculated);
+                                count_down_tree(tail_length + 1, &layer, snakes_calculated, &bars);
                         }
+                        bar.finish_and_clear();
                     },
                 );
-                bar.finish_and_clear();
             }
 
             2 * top_sum + middle_sum
@@ -407,29 +427,34 @@ fn count_down_tree(
                 side_sum = possible_sides.len() as u128;
                 middle_sum = possible_middles.len() as u128;
             } else {
-                let bar = ProgressBar::new((possible_sides.len() + possible_middles.len()) as u64);
-                bar.set_style(
-                    ProgressStyle::default_bar()
-                        .template("[{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}"),
-                );
                 rayon::join(
                     || {
+                        let bar = bars.add(ProgressBar::new(possible_sides.len() as u64));
+                        bar.set_style(ProgressStyle::default_bar().template(
+                            "[{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}",
+                        ));
                         bar.set_message(&format!("Vertical:Side : {}", tail_length));
                         for layer in possible_sides {
                             bar.inc(1);
-                            side_sum += count_down_tree(tail_length + 1, &layer, snakes_calculated);
+                            side_sum +=
+                                count_down_tree(tail_length + 1, &layer, snakes_calculated, &bars);
                         }
+                        bar.finish_and_clear();
                     },
                     || {
+                        let bar = bars.add(ProgressBar::new(possible_middles.len() as u64));
+                        bar.set_style(ProgressStyle::default_bar().template(
+                            "[{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}",
+                        ));
                         bar.set_message(&format!("Vertical:Middle : {}", tail_length));
                         for layer in possible_middles {
                             bar.inc(1);
                             middle_sum +=
-                                count_down_tree(tail_length + 1, &layer, snakes_calculated);
+                                count_down_tree(tail_length + 1, &layer, snakes_calculated, &bars);
                         }
+                        bar.finish_and_clear();
                     },
                 );
-                bar.finish_and_clear();
             }
 
             2 * side_sum + middle_sum
@@ -460,34 +485,42 @@ fn count_down_tree(
                 side_sum = possible_sides.len() as u128;
                 middle_sum = possible_middles.len() as u128;
             } else {
-                let bar = ProgressBar::new(
-                    (possible_corners.len() + possible_sides.len() + possible_middles.len()) as u64,
+                rayon::join(
+                    || {
+                        let bar = bars.add(ProgressBar::new(possible_corners.len() as u64));
+                        bar.set_style(ProgressStyle::default_bar().template(
+                            "[{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}",
+                        ));
+                        bar.set_message(&format!("Full:Corner : {}", tail_length));
+                        for layer in possible_corners {
+                            bar.inc(1);
+                            corner_sum +=
+                                count_down_tree(tail_length + 1, &layer, snakes_calculated, &bars);
+                        }
+                    },
+                    || {
+                        let bar = bars.add(ProgressBar::new(possible_sides.len() as u64));
+                        bar.set_style(ProgressStyle::default_bar().template(
+                            "[{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}",
+                        ));
+                        bar.set_message(&format!("Full:Side : {}", tail_length));
+                        for layer in possible_sides {
+                            bar.inc(1);
+                            side_sum +=
+                                count_down_tree(tail_length + 1, &layer, snakes_calculated, &bars);
+                        }
+                    },
                 );
+                let bar = bars.add(ProgressBar::new(possible_middles.len() as u64));
                 bar.set_style(
                     ProgressStyle::default_bar()
                         .template("[{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}"),
                 );
-                bar.set_message(&format!("Full:Corner : {}", tail_length));
-                rayon::join(
-                    || {
-                        for layer in possible_corners {
-                            bar.inc(1);
-                            corner_sum +=
-                                count_down_tree(tail_length + 1, &layer, snakes_calculated);
-                        }
-                    },
-                    || {
-                        bar.set_message(&format!("Full:Side : {}", tail_length));
-                        for layer in possible_sides {
-                            bar.inc(1);
-                            side_sum += count_down_tree(tail_length + 1, &layer, snakes_calculated);
-                        }
-                    },
-                );
                 bar.set_message(&format!("Full:Middle : {}", tail_length));
                 for layer in possible_middles {
                     bar.inc(1);
-                    middle_sum += count_down_tree(tail_length + 1, &layer, snakes_calculated);
+                    middle_sum +=
+                        count_down_tree(tail_length + 1, &layer, snakes_calculated, &bars);
                 }
                 bar.finish_and_clear();
             }
@@ -520,7 +553,7 @@ fn count_down_tree(
             if tail_length == 6 {
                 sum = possible_positions.len() as u128
             } else {
-                let bar = ProgressBar::new(possible_positions.len() as u64);
+                let bar = bars.add(ProgressBar::new(possible_positions.len() as u64));
                 bar.set_style(
                     ProgressStyle::default_bar()
                         .template("[{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}"),
@@ -528,7 +561,7 @@ fn count_down_tree(
                 bar.set_message(&format!("None : {}", tail_length));
                 for layer in possible_positions {
                     bar.inc(1);
-                    sum += count_down_tree(tail_length + 1, &layer, snakes_calculated);
+                    sum += count_down_tree(tail_length + 1, &layer, snakes_calculated, &bars);
                 }
                 bar.finish_and_clear();
             }
