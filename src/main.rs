@@ -1,13 +1,11 @@
 extern crate fnv;
-extern crate indicatif;
 extern crate rayon;
 
 use fnv::FnvHashSet;
-use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use std::collections::HashMap;
-use std::sync::Arc;
-use std::thread;
 const MAP_WIDTH: usize = 3;
+
+const SEARCH_LENGTH: usize = 3;
 
 struct PositionFinder<'a, 'b, 'c> {
     main_positions: &'c [u8],
@@ -53,7 +51,7 @@ impl<'a, 'b, 'c> Iterator for PositionFinder<'a, 'b, 'c> {
         loop {
             if self.output.len() == 1 && !self.main_positions.contains(&self.output[0]) {
                 self.output[0] += 1;
-                if self.output[0] == 9 {
+                if self.output[0] >= 9 {
                     self.done = true;
                     return None;
                 }
@@ -311,26 +309,13 @@ fn main() {
         }
     }
     println!("Done generating");
-    let bars_orig = Arc::new(MultiProgress::new());
-    let pb = bars_orig.add(ProgressBar::new(3));
-    let bars = bars_orig.clone();
-    let mut final_value = 0;
-    let _ = thread::spawn(move || {
-        pb.tick();
-        let corners = count_down_tree(1, &[0], &snakes_calculated, &bars);
-        pb.inc(1);
-        println!("{}", corners);
-        let side = count_down_tree(1, &[1], &snakes_calculated, &bars);
-        pb.inc(1);
-        println!("{}", side);
-        let middle = count_down_tree(1, &[4], &snakes_calculated, &bars);
-        pb.inc(1);
-        println!("{}", middle);
-        final_value = 4 * corners + 4 * side + middle;
-        println!("{}", final_value);
-        pb.finish_with_message("done");
-    });
-    bars_orig.join_and_clear().unwrap();
+    let corners = count_down_tree(1, &[0], &snakes_calculated);
+    println!("{}", corners);
+    let side = count_down_tree(1, &[1], &snakes_calculated);
+    println!("{}", side);
+    let middle = count_down_tree(1, &[4], &snakes_calculated);
+    println!("{}", middle);
+    let final_value = 4 * corners + 4 * side + middle;
     println!("{}", final_value);
 }
 
@@ -338,7 +323,6 @@ fn count_down_tree(
     tail_length: usize,
     previous_layer: &[u8],
     snakes_calculated: &HashMap<(u8, usize), FnvHashSet<[bool; MAP_WIDTH * MAP_WIDTH]>>,
-    bars: &MultiProgress,
 ) -> u128 {
     match symmetricality(simplify(&previous_layer)) {
         Some(Symmetry::Horizontal) => {
@@ -364,36 +348,21 @@ fn count_down_tree(
             );
             let mut top_sum = 0;
             let mut middle_sum = 0;
-            if tail_length == 6 {
+            if tail_length == SEARCH_LENGTH {
                 top_sum = possible_tops.len() as u128;
                 middle_sum = possible_middles.len() as u128;
             } else {
                 rayon::join(
                     || {
-                        let bar = bars.add(ProgressBar::new(possible_tops.len() as u64));
-                        bar.set_style(ProgressStyle::default_bar().template(
-                            "[{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}",
-                        ));
-                        bar.set_message(&format!("Horizontal:Top : {}", tail_length));
                         for layer in possible_tops {
-                            bar.inc(1);
-                            top_sum +=
-                                count_down_tree(tail_length + 1, &layer, snakes_calculated, &bars);
-                            bar.finish_and_clear();
+                            top_sum += count_down_tree(tail_length + 1, &layer, snakes_calculated);
                         }
                     },
                     || {
-                        let bar = bars.add(ProgressBar::new(possible_middles.len() as u64));
-                        bar.set_style(ProgressStyle::default_bar().template(
-                            "[{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}",
-                        ));
-                        bar.set_message(&format!("Horizontal:Middle : {}", tail_length));
                         for layer in possible_middles {
-                            bar.inc(1);
                             middle_sum +=
-                                count_down_tree(tail_length + 1, &layer, snakes_calculated, &bars);
+                                count_down_tree(tail_length + 1, &layer, snakes_calculated);
                         }
-                        bar.finish_and_clear();
                     },
                 );
             }
@@ -423,36 +392,21 @@ fn count_down_tree(
             );
             let mut side_sum = 0;
             let mut middle_sum = 0;
-            if tail_length == 6 {
+            if tail_length == SEARCH_LENGTH {
                 side_sum = possible_sides.len() as u128;
                 middle_sum = possible_middles.len() as u128;
             } else {
                 rayon::join(
                     || {
-                        let bar = bars.add(ProgressBar::new(possible_sides.len() as u64));
-                        bar.set_style(ProgressStyle::default_bar().template(
-                            "[{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}",
-                        ));
-                        bar.set_message(&format!("Vertical:Side : {}", tail_length));
                         for layer in possible_sides {
-                            bar.inc(1);
-                            side_sum +=
-                                count_down_tree(tail_length + 1, &layer, snakes_calculated, &bars);
+                            side_sum += count_down_tree(tail_length + 1, &layer, snakes_calculated);
                         }
-                        bar.finish_and_clear();
                     },
                     || {
-                        let bar = bars.add(ProgressBar::new(possible_middles.len() as u64));
-                        bar.set_style(ProgressStyle::default_bar().template(
-                            "[{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}",
-                        ));
-                        bar.set_message(&format!("Vertical:Middle : {}", tail_length));
                         for layer in possible_middles {
-                            bar.inc(1);
                             middle_sum +=
-                                count_down_tree(tail_length + 1, &layer, snakes_calculated, &bars);
+                                count_down_tree(tail_length + 1, &layer, snakes_calculated);
                         }
-                        bar.finish_and_clear();
                     },
                 );
             }
@@ -480,53 +434,259 @@ fn count_down_tree(
             let mut corner_sum = 0;
             let mut side_sum = 0;
             let mut middle_sum = 0;
-            if tail_length == 6 {
+            if tail_length == SEARCH_LENGTH {
                 corner_sum = possible_corners.len() as u128;
                 side_sum = possible_sides.len() as u128;
                 middle_sum = possible_middles.len() as u128;
             } else {
                 rayon::join(
                     || {
-                        let bar = bars.add(ProgressBar::new(possible_corners.len() as u64));
-                        bar.set_style(ProgressStyle::default_bar().template(
-                            "[{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}",
-                        ));
-                        bar.set_message(&format!("Full:Corner : {}", tail_length));
                         for layer in possible_corners {
-                            bar.inc(1);
                             corner_sum +=
-                                count_down_tree(tail_length + 1, &layer, snakes_calculated, &bars);
+                                count_down_tree(tail_length + 1, &layer, snakes_calculated);
                         }
-                        bar.finish_and_clear();
                     },
                     || {
-                        let bar = bars.add(ProgressBar::new(possible_sides.len() as u64));
-                        bar.set_style(ProgressStyle::default_bar().template(
-                            "[{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}",
-                        ));
-                        bar.set_message(&format!("Full:Side : {}", tail_length));
                         for layer in possible_sides {
-                            bar.inc(1);
-                            side_sum +=
-                                count_down_tree(tail_length + 1, &layer, snakes_calculated, &bars);
+                            side_sum += count_down_tree(tail_length + 1, &layer, snakes_calculated);
                         }
-                        bar.finish_and_clear();
                     },
                 );
-                let bar = bars.add(ProgressBar::new(possible_middles.len() as u64));
-                bar.set_style(
-                    ProgressStyle::default_bar()
-                        .template("[{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}"),
-                );
-                bar.set_message(&format!("Full:Middle : {}", tail_length));
                 for layer in possible_middles {
-                    bar.inc(1);
-                    middle_sum +=
-                        count_down_tree(tail_length + 1, &layer, snakes_calculated, &bars);
+                    middle_sum += count_down_tree(tail_length + 1, &layer, snakes_calculated);
                 }
-                bar.finish_and_clear();
             }
+
             4 * corner_sum + 4 * side_sum + middle_sum
+        }
+        Some(Symmetry::Plus) => {
+            let mut possible_corners: Vec<Vec<u8>> = Vec::new();
+            let mut possible_sides_horizontal: Vec<Vec<u8>> = Vec::new();
+            let mut possible_sides_vertical: Vec<Vec<u8>> = Vec::new();
+            let mut possible_middles: Vec<Vec<u8>> = Vec::new();
+            rayon::join(
+                || {
+                    possible_corners =
+                        PositionFinder::new(&[0], &previous_layer, tail_length, &snakes_calculated)
+                            .collect();
+                },
+                || {
+                    possible_sides_horizontal =
+                        PositionFinder::new(&[1], &previous_layer, tail_length, &snakes_calculated)
+                            .collect();
+                },
+            );
+            rayon::join(
+                || {
+                    possible_sides_vertical =
+                        PositionFinder::new(&[3], &previous_layer, tail_length, &snakes_calculated)
+                            .collect();
+                },
+                || {
+                    possible_middles =
+                        PositionFinder::new(&[4], &previous_layer, tail_length, &snakes_calculated)
+                            .collect();
+                },
+            );
+            let mut corner_sum = 0;
+            let mut side_sum_horizontal = 0;
+            let mut side_sum_vertical = 0;
+            let mut middle_sum = 0;
+            if tail_length == SEARCH_LENGTH {
+                corner_sum = possible_corners.len() as u128;
+                side_sum_horizontal = possible_sides_horizontal.len() as u128;
+                side_sum_vertical = possible_sides_vertical.len() as u128;
+                middle_sum = possible_middles.len() as u128;
+            } else {
+                rayon::join(
+                    || {
+                        for layer in possible_corners {
+                            corner_sum +=
+                                count_down_tree(tail_length + 1, &layer, snakes_calculated);
+                        }
+                    },
+                    || {
+                        for layer in possible_sides_vertical {
+                            side_sum_vertical +=
+                                count_down_tree(tail_length + 1, &layer, snakes_calculated);
+                        }
+                    },
+                );
+                rayon::join(
+                    || {
+                        for layer in possible_sides_horizontal {
+                            side_sum_horizontal +=
+                                count_down_tree(tail_length + 1, &layer, snakes_calculated);
+                        }
+                    },
+                    || {
+                        for layer in possible_middles {
+                            middle_sum +=
+                                count_down_tree(tail_length + 1, &layer, snakes_calculated);
+                        }
+                    },
+                );
+            }
+
+            4 * corner_sum + 2 * side_sum_vertical + 2 * side_sum_horizontal + middle_sum
+        }
+        Some(Symmetry::X) => {
+            let mut possible_corners_one: Vec<Vec<u8>> = Vec::new();
+            let mut possible_corners_two: Vec<Vec<u8>> = Vec::new();
+            let mut possible_sides: Vec<Vec<u8>> = Vec::new();
+            let mut possible_middles: Vec<Vec<u8>> = Vec::new();
+            rayon::join(
+                || {
+                    possible_corners_one =
+                        PositionFinder::new(&[0], &previous_layer, tail_length, &snakes_calculated)
+                            .collect();
+                },
+                || {
+                    possible_corners_two =
+                        PositionFinder::new(&[2], &previous_layer, tail_length, &snakes_calculated)
+                            .collect();
+                },
+            );
+            rayon::join(
+                || {
+                    possible_sides =
+                        PositionFinder::new(&[3], &previous_layer, tail_length, &snakes_calculated)
+                            .collect();
+                },
+                || {
+                    possible_middles =
+                        PositionFinder::new(&[4], &previous_layer, tail_length, &snakes_calculated)
+                            .collect();
+                },
+            );
+            let mut corner_one_sum = 0;
+            let mut corner_two_sum = 0;
+            let mut side_sum = 0;
+            let mut middle_sum = 0;
+            if tail_length == SEARCH_LENGTH {
+                corner_one_sum = possible_corners_one.len() as u128;
+                corner_two_sum = possible_corners_two.len() as u128;
+                side_sum = possible_sides.len() as u128;
+                middle_sum = possible_middles.len() as u128;
+            } else {
+                rayon::join(
+                    || {
+                        for layer in possible_corners_one {
+                            corner_one_sum +=
+                                count_down_tree(tail_length + 1, &layer, snakes_calculated);
+                        }
+                    },
+                    || {
+                        for layer in possible_corners_two {
+                            corner_two_sum +=
+                                count_down_tree(tail_length + 1, &layer, snakes_calculated);
+                        }
+                    },
+                );
+                rayon::join(
+                    || {
+                        for layer in possible_sides {
+                            side_sum += count_down_tree(tail_length + 1, &layer, snakes_calculated);
+                        }
+                    },
+                    || {
+                        for layer in possible_middles {
+                            middle_sum +=
+                                count_down_tree(tail_length + 1, &layer, snakes_calculated);
+                        }
+                    },
+                );
+            }
+
+            4 * side_sum + 2 * corner_one_sum + 2 * corner_two_sum + middle_sum
+        }
+        Some(Symmetry::DiagonalDown) => {
+            let mut possible_sides: Vec<Vec<u8>> = Vec::new();
+            let mut possible_middles: Vec<Vec<u8>> = Vec::new();
+            rayon::join(
+                || {
+                    possible_sides = PositionFinder::new(
+                        &[1, 2, 5],
+                        &previous_layer,
+                        tail_length,
+                        &snakes_calculated,
+                    ).collect();
+                },
+                || {
+                    possible_middles = PositionFinder::new(
+                        &[0, 4, 8],
+                        &previous_layer,
+                        tail_length,
+                        &snakes_calculated,
+                    ).collect();
+                },
+            );
+            let mut side_sum = 0;
+            let mut middle_sum = 0;
+            if tail_length == SEARCH_LENGTH {
+                side_sum = possible_sides.len() as u128;
+                middle_sum = possible_middles.len() as u128;
+            } else {
+                rayon::join(
+                    || {
+                        for layer in possible_sides {
+                            side_sum += count_down_tree(tail_length + 1, &layer, snakes_calculated);
+                        }
+                    },
+                    || {
+                        for layer in possible_middles {
+                            middle_sum +=
+                                count_down_tree(tail_length + 1, &layer, snakes_calculated);
+                        }
+                    },
+                );
+            }
+
+            2 * side_sum + middle_sum
+        }
+        Some(Symmetry::DiagonalUp) => {
+            let mut possible_sides: Vec<Vec<u8>> = Vec::new();
+            let mut possible_middles: Vec<Vec<u8>> = Vec::new();
+            rayon::join(
+                || {
+                    possible_sides = PositionFinder::new(
+                        &[0, 1, 3],
+                        &previous_layer,
+                        tail_length,
+                        &snakes_calculated,
+                    ).collect();
+                },
+                || {
+                    possible_middles = PositionFinder::new(
+                        &[2, 4, 6],
+                        &previous_layer,
+                        tail_length,
+                        &snakes_calculated,
+                    ).collect();
+                },
+            );
+            let mut side_sum = 0;
+            let mut middle_sum = 0;
+            if tail_length == SEARCH_LENGTH {
+                side_sum = possible_sides.len() as u128;
+                middle_sum = possible_middles.len() as u128;
+            } else {
+                rayon::join(
+                    || {
+                        for layer in possible_sides {
+                            side_sum += count_down_tree(tail_length + 1, &layer, snakes_calculated);
+                        }
+                    },
+                    || {
+                        for layer in possible_middles {
+                            middle_sum +=
+                                count_down_tree(tail_length + 1, &layer, snakes_calculated);
+                        }
+                    },
+                );
+            }
+
+            2 * side_sum + middle_sum
         }
         None => {
             let mut first_half: Vec<Vec<u8>> = Vec::new();
@@ -534,7 +694,7 @@ fn count_down_tree(
             rayon::join(
                 || {
                     first_half = PositionFinder::new(
-                        &[4, 5, 6, 7, 8],
+                        &[0, 1, 2, 3],
                         &previous_layer,
                         tail_length,
                         &snakes_calculated,
@@ -542,7 +702,7 @@ fn count_down_tree(
                 },
                 || {
                     second_half = PositionFinder::new(
-                        &[0, 1, 2, 3],
+                        &[4, 5, 6, 7, 8],
                         &previous_layer,
                         tail_length,
                         &snakes_calculated,
@@ -552,20 +712,12 @@ fn count_down_tree(
             first_half.append(&mut second_half);
             let possible_positions = first_half;
             let mut sum = 0;
-            if tail_length == 6 {
+            if tail_length == SEARCH_LENGTH {
                 sum = possible_positions.len() as u128
             } else {
-                let bar = bars.add(ProgressBar::new(possible_positions.len() as u64));
-                bar.set_style(
-                    ProgressStyle::default_bar()
-                        .template("[{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}"),
-                );
-                bar.set_message(&format!("None : {}", tail_length));
                 for layer in possible_positions {
-                    bar.inc(1);
-                    sum += count_down_tree(tail_length + 1, &layer, snakes_calculated, &bars);
+                    sum += count_down_tree(tail_length + 1, &layer, snakes_calculated);
                 }
-                bar.finish_and_clear();
             }
             sum
         }
@@ -573,9 +725,40 @@ fn count_down_tree(
 }
 
 enum Symmetry {
-    Horizontal,
-    Vertical,
+    // aba
+    // bcb
+    // aba
     Full,
+
+    // abc
+    // def
+    // abc
+    Horizontal,
+
+    // ada
+    // beb
+    // cfc
+    Vertical,
+
+    // aba
+    // cdc
+    // aba
+    Plus,
+
+    // dab
+    // aec
+    // bcf
+    DiagonalDown,
+
+    // abd
+    // cec
+    // fba
+    DiagonalUp,
+
+    // abc
+    // bdb
+    // cba
+    X,
 }
 
 #[inline]
@@ -590,12 +773,22 @@ fn simplify(points: &[u8]) -> [bool; 9] {
 fn symmetricality(points: [bool; 9]) -> Option<Symmetry> {
     let horizontal = points[0] == points[6] && points[1] == points[7] && points[2] == points[8];
     let vertical = points[0] == points[2] && points[3] == points[5] && points[6] == points[8];
-    if horizontal && vertical {
+    let diagonal_down = points[1] == points[3] && points[2] == points[6] && points[5] == points[7];
+    let diagonal_up = points[0] == points[8] && points[1] == points[5] && points[3] == points[7];
+    if horizontal && vertical && diagonal_down && diagonal_up {
         Some(Symmetry::Full)
+    } else if horizontal && vertical {
+        Some(Symmetry::Plus)
     } else if vertical {
         Some(Symmetry::Vertical)
     } else if horizontal {
         Some(Symmetry::Horizontal)
+    } else if diagonal_down && diagonal_up {
+        Some(Symmetry::X)
+    } else if vertical {
+        Some(Symmetry::DiagonalDown)
+    } else if horizontal {
+        Some(Symmetry::DiagonalUp)
     } else {
         None
     }
