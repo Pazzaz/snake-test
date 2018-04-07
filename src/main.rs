@@ -425,20 +425,14 @@ fn count_down_tree(
             let mut possible_sides: Vec<Vec<u8>> = Vec::new();
             rayon::join(
                 || {
-                    possible_corners = PositionFinder::new(
-                        &[0],
-                        &previous_layer,
-                        tail_length,
-                        &snakes_calculated,
-                    ).collect();
+                    possible_corners =
+                        PositionFinder::new(&[0], &previous_layer, tail_length, &snakes_calculated)
+                            .collect();
                 },
                 || {
-                    possible_sides = PositionFinder::new(
-                        &[1],
-                        &previous_layer,
-                        tail_length,
-                        &snakes_calculated,
-                    ).collect();
+                    possible_sides =
+                        PositionFinder::new(&[1], &previous_layer, tail_length, &snakes_calculated)
+                            .collect();
                 },
             );
             let possible_middles: Vec<Vec<u8>> =
@@ -460,15 +454,22 @@ fn count_down_tree(
                         .template("[{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}"),
                 );
                 bar.set_message(&format!("Full:Corner : {}", tail_length));
-                for layer in possible_corners {
-                    bar.inc(1);
-                    corner_sum += count_down_tree(tail_length + 1, &layer, snakes_calculated);
-                }
-                bar.set_message(&format!("Full:Side : {}", tail_length));
-                for layer in possible_sides {
-                    bar.inc(1);
-                    side_sum += count_down_tree(tail_length + 1, &layer, snakes_calculated);
-                }
+                rayon::join(
+                    || {
+                        for layer in possible_corners {
+                            bar.inc(1);
+                            corner_sum +=
+                                count_down_tree(tail_length + 1, &layer, snakes_calculated);
+                        }
+                    },
+                    || {
+                        bar.set_message(&format!("Full:Side : {}", tail_length));
+                        for layer in possible_sides {
+                            bar.inc(1);
+                            side_sum += count_down_tree(tail_length + 1, &layer, snakes_calculated);
+                        }
+                    },
+                );
                 bar.set_message(&format!("Full:Middle : {}", tail_length));
                 for layer in possible_middles {
                     bar.inc(1);
