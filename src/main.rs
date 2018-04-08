@@ -8,6 +8,7 @@ const MAP_WIDTH: usize = 3;
 
 const SEARCH_LENGTH: usize = 6;
 
+#[derive(Clone, Copy)]
 enum Moves {
     Up,
     Right,
@@ -158,81 +159,56 @@ fn get_valid_snakes(tail_length: usize, head: usize) -> FnvHashSet<[bool; MAP_WI
         positions_taken.clear();
         positions_taken.push(head);
 
+        let mut non_relative_moves = Vec::with_capacity(tail_length);
+        
         // Handle the first move differently as it can move in four directions
-        let mut last_move;
-        match moves[0] {
-            0 => {
-                // UP
-                if current_y == 0 {
-                    continue 'outer;
-                }
-                current_y -= 1;
-                last_move = 0;
-            }
-            1 => {
-                // RIGHT
-                if current_x == MAP_WIDTH - 1 {
-                    continue 'outer;
-                }
-                current_x += 1;
-                last_move = 1;
-            }
-            2 => {
-                // DOWN
-                if current_y == MAP_WIDTH - 1 {
-                    continue 'outer;
-                }
-                current_y += 1;
-                last_move = 2;
-            }
-            3 => {
-                // LEFT
-                if current_x == 0 {
-                    continue 'outer;
-                }
-                current_x -= 1;
-                last_move = 3;
-            }
+        let first_move = match moves[0] {
+            0 => Moves::Up,
+            1 => Moves::Right,
+            2 => Moves::Down,
+            3 => Moves::Left,
             _ => unreachable!(),
-        }
-        positions_taken.push(current_y * MAP_WIDTH + current_x);
-
+        };
+        let mut last_move = first_move;
+        non_relative_moves.push(first_move);
+        
         for direction in moves.iter().take(tail_length).skip(1) {
             let chosen_move = match (last_move, *direction) {
-                (0, 1) | (1, 0) | (3, 2) => Moves::Up,
-                (0, 2) | (1, 1) | (2, 0) => Moves::Right,
-                (1, 2) | (2, 1) | (3, 0) => Moves::Down,
-                (0, 0) | (2, 2) | (3, 1) => Moves::Left,
+                (Moves::Up, 1)    | (Moves::Right, 0) | (Moves::Left, 2) => Moves::Up,
+                (Moves::Up, 2)    | (Moves::Right, 1) | (Moves::Down, 0) => Moves::Right,
+                (Moves::Right, 2) | (Moves::Down, 1)  | (Moves::Left, 0) => Moves::Down,
+                (Moves::Up, 0)    | (Moves::Down, 2)  | (Moves::Left, 1) => Moves::Left,
                 _ => unreachable!(),
             };
-            match chosen_move {
+            last_move = chosen_move;
+            non_relative_moves.push(chosen_move);
+        }
+
+        for direction in non_relative_moves {
+            match direction {
                 Moves::Up => {
                     if current_y == 0 {
                         continue 'outer;
                     }
                     current_y -= 1;
-                    last_move = 0;
                 }
                 Moves::Right => {
                     if current_x == MAP_WIDTH - 1 {
                         continue 'outer;
                     }
                     current_x += 1;
-                    last_move = 1;
                 }
                 Moves::Down => {
                     if current_y == MAP_WIDTH - 1 {
                         continue 'outer;
                     }
                     current_y += 1;
-                    last_move = 2;
                 }
                 Moves::Left => {
                     if current_x == 0 {
                         continue 'outer;
                     }
                     current_x -= 1;
-                    last_move = 3;
                 }
             }
             let n = current_y * MAP_WIDTH + current_x;
