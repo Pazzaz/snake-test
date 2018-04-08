@@ -2,14 +2,16 @@ extern crate fnv;
 extern crate rayon;
 
 use fnv::FnvHashSet;
+use fnv::FnvHashMap;
 use std::collections::HashMap;
 const MAP_WIDTH: usize = 3;
 
-const SEARCH_LENGTH: usize = 3;
+const SEARCH_LENGTH: usize = 6;
 
 struct PositionFinder<'a, 'b, 'c> {
     main_positions: &'c [u8],
-    output: Vec<u8>,
+    output: [u8; 9],
+    output_n: usize,
     previous_choises: &'b [u8],
     tail_length: usize,
     snakes_calculated: &'a HashMap<(u8, usize), FnvHashSet<[bool; MAP_WIDTH * MAP_WIDTH]>>,
@@ -32,7 +34,8 @@ impl<'a, 'b, 'c> PositionFinder<'a, 'b, 'c> {
     ) -> PositionFinder<'a, 'b, 'c> {
         PositionFinder {
             main_positions,
-            output: { vec![0] },
+            output: [0, 0, 0, 0, 0, 0, 0, 0, 0],
+            output_n: 0,
             previous_choises,
             tail_length,
             snakes_calculated: snakes_calculated,
@@ -49,53 +52,59 @@ impl<'a, 'b, 'c> Iterator for PositionFinder<'a, 'b, 'c> {
             return None;
         }
         loop {
-            if self.output.len() == 1 && !self.main_positions.contains(&self.output[0]) {
+            if self.output_n == 0 && !self.main_positions.contains(&self.output[0]) {
                 self.output[0] += 1;
                 if self.output[0] >= 9 {
                     self.done = true;
                     return None;
                 }
-            } else if *self.output.last().unwrap() >= (MAP_WIDTH * MAP_WIDTH) as u8 {
+            } else if self.output[self.output_n] >= (MAP_WIDTH * MAP_WIDTH) as u8 {
                 // When we've iterated up to MAP_WIDTH*MAP_WIDTH then we've gone through all values
                 // needed for that positions and can increment the previous position
-                self.output.pop();
-                *self.output.last_mut().unwrap() += 1;
+                self.output[self.output_n] = 0;
+                self.output_n -= 1;
+                self.output[self.output_n] += 1;
                 if self.output[0] == (MAP_WIDTH * MAP_WIDTH) as u8 {
                     self.done = true;
                     return None;
                 }
-            } else if (self.previous_choises.len() == 1
+            } else if (
+                // We can't choose the same value as what we know was the value the last time
+                self.previous_choises.len() == 1 &&
+                self.previous_choises[0] == self.output[self.output_n]
+            ) ||
                 // If the last element of our output exists elsewhere in our array,
                 // it's an invalid value and we need to get a new one
-                && self.previous_choises[0] == *self.output.last().unwrap())
-                || {
-                    let (last, rest) = self.output.split_last().unwrap();
+                 {
+                    let (last, rest) = self.output[0..=self.output_n].split_last().unwrap();
                     rest.contains(last)
                 } {
-                *self.output.last_mut().unwrap() += 1;
-            } else if self.output.len() < (self.tail_length + 2)
+                self.output[self.output_n] += 1;
+            } else if self.output_n + 1 < (self.tail_length + 2)
                 && need_backup(
                     &self.previous_choises,
-                    *self.output.last().unwrap(),
+                    self.output[self.output_n],
                     self.tail_length,
                 )
                 && could_block_all(
                     &self.previous_choises,
-                    &self.output,
+                    &self.output[0..=self.output_n],
                     &self.snakes_calculated,
                     self.tail_length,
                 ) {
                 // Add another backup value if we need it
                 for backup in 0..((MAP_WIDTH * MAP_WIDTH) as u8) {
-                    if !self.output.contains(&backup) {
-                        self.output.push(backup);
+                    if !self.output[0..=self.output_n].contains(&backup) {
+                        self.output_n += 1;
+                        self.output[self.output_n] = backup;
                         break;
                     }
                 }
             } else {
                 // Our output is valid
-                let out = self.output.clone();
-                *self.output.last_mut().unwrap() += 1;
+                let mut out = self.output[0..=self.output_n].to_vec();
+                out.sort();
+                self.output[self.output_n] += 1;
                 if self.output[0] == (MAP_WIDTH * MAP_WIDTH) as u8 {
                     self.done = true;
                 }
@@ -310,11 +319,12 @@ fn main() {
         }
     }
     println!("Done generating");
-    let corners = count_down_tree(1, &[0], &snakes_calculated);
+    let mut hashed_branches = FnvHashMap::default();
+    let corners = count_down_tree(1, &[0], &snakes_calculated, &mut hashed_branches);
     println!("{}", corners);
-    let side = count_down_tree(1, &[1], &snakes_calculated);
+    let side = count_down_tree(1, &[1], &snakes_calculated, &mut hashed_branches);
     println!("{}", side);
-    let middle = count_down_tree(1, &[4], &snakes_calculated);
+    let middle = count_down_tree(1, &[4], &snakes_calculated, &mut hashed_branches);
     println!("{}", middle);
     let final_value = 4 * corners + 4 * side + middle;
     println!("{}", final_value);
@@ -324,8 +334,14 @@ fn count_down_tree(
     tail_length: usize,
     previous_layer: &[u8],
     snakes_calculated: &HashMap<(u8, usize), FnvHashSet<[bool; MAP_WIDTH * MAP_WIDTH]>>,
+    hashed_branches: &mut FnvHashMap<([bool; 9], usize), u128>,
 ) -> u128 {
-    match symmetricality(simplify(&previous_layer)) {
+    let previous_layer_simple = simplify(&previous_layer);
+    match hashed_branches.get(&(previous_layer_simple, tail_length)) {
+        Some(value) => return *value,
+        None => {}
+    }
+    match symmetricality(previous_layer_simple) {
         Some(Symmetry::Horizontal) => {
             let mut possible_tops: Vec<Vec<u8>> = Vec::new();
             let mut possible_middles: Vec<Vec<u8>> = Vec::new();
@@ -353,22 +369,18 @@ fn count_down_tree(
                 top_sum = possible_tops.len() as u128;
                 middle_sum = possible_middles.len() as u128;
             } else {
-                rayon::join(
-                    || {
-                        for layer in possible_tops {
-                            top_sum += count_down_tree(tail_length + 1, &layer, snakes_calculated);
-                        }
-                    },
-                    || {
-                        for layer in possible_middles {
-                            middle_sum +=
-                                count_down_tree(tail_length + 1, &layer, snakes_calculated);
-                        }
-                    },
-                );
+                for layer in possible_tops {
+                    top_sum += count_down_tree(tail_length + 1, &layer, snakes_calculated, hashed_branches);
+                }
+                for layer in possible_middles {
+                    middle_sum +=
+                        count_down_tree(tail_length + 1, &layer, snakes_calculated, hashed_branches);
+                }
             }
 
-            2 * top_sum + middle_sum
+            let total = 2 * top_sum + middle_sum;
+            hashed_branches.insert((previous_layer_simple, tail_length), total);
+            total
         }
         Some(Symmetry::Vertical) => {
             let mut possible_sides: Vec<Vec<u8>> = Vec::new();
@@ -397,22 +409,18 @@ fn count_down_tree(
                 side_sum = possible_sides.len() as u128;
                 middle_sum = possible_middles.len() as u128;
             } else {
-                rayon::join(
-                    || {
                         for layer in possible_sides {
-                            side_sum += count_down_tree(tail_length + 1, &layer, snakes_calculated);
+                            side_sum += count_down_tree(tail_length + 1, &layer, snakes_calculated, hashed_branches);
                         }
-                    },
-                    || {
                         for layer in possible_middles {
                             middle_sum +=
-                                count_down_tree(tail_length + 1, &layer, snakes_calculated);
+                                count_down_tree(tail_length + 1, &layer, snakes_calculated, hashed_branches);
                         }
-                    },
-                );
             }
 
-            2 * side_sum + middle_sum
+            let total = 2 * side_sum + middle_sum;
+                        hashed_branches.insert((previous_layer_simple, tail_length), total);
+            total
         }
         Some(Symmetry::Full) => {
             let mut possible_corners: Vec<Vec<u8>> = Vec::new();
@@ -440,25 +448,21 @@ fn count_down_tree(
                 side_sum = possible_sides.len() as u128;
                 middle_sum = possible_middles.len() as u128;
             } else {
-                rayon::join(
-                    || {
                         for layer in possible_corners {
                             corner_sum +=
-                                count_down_tree(tail_length + 1, &layer, snakes_calculated);
+                                count_down_tree(tail_length + 1, &layer, snakes_calculated, hashed_branches);
                         }
-                    },
-                    || {
                         for layer in possible_sides {
-                            side_sum += count_down_tree(tail_length + 1, &layer, snakes_calculated);
+                            side_sum += count_down_tree(tail_length + 1, &layer, snakes_calculated, hashed_branches);
                         }
-                    },
-                );
                 for layer in possible_middles {
-                    middle_sum += count_down_tree(tail_length + 1, &layer, snakes_calculated);
+                    middle_sum += count_down_tree(tail_length + 1, &layer, snakes_calculated, hashed_branches);
                 }
             }
 
-            4 * corner_sum + 4 * side_sum + middle_sum
+            let total = 4 * corner_sum + 4 * side_sum + middle_sum;
+                        hashed_branches.insert((previous_layer_simple, tail_length), total);
+            total
         }
         Some(Symmetry::Plus) => {
             let mut possible_corners: Vec<Vec<u8>> = Vec::new();
@@ -499,37 +503,27 @@ fn count_down_tree(
                 side_sum_vertical = possible_sides_vertical.len() as u128;
                 middle_sum = possible_middles.len() as u128;
             } else {
-                rayon::join(
-                    || {
                         for layer in possible_corners {
                             corner_sum +=
-                                count_down_tree(tail_length + 1, &layer, snakes_calculated);
+                                count_down_tree(tail_length + 1, &layer, snakes_calculated, hashed_branches);
                         }
-                    },
-                    || {
                         for layer in possible_sides_vertical {
                             side_sum_vertical +=
-                                count_down_tree(tail_length + 1, &layer, snakes_calculated);
+                                count_down_tree(tail_length + 1, &layer, snakes_calculated, hashed_branches);
                         }
-                    },
-                );
-                rayon::join(
-                    || {
                         for layer in possible_sides_horizontal {
                             side_sum_horizontal +=
-                                count_down_tree(tail_length + 1, &layer, snakes_calculated);
+                                count_down_tree(tail_length + 1, &layer, snakes_calculated, hashed_branches);
                         }
-                    },
-                    || {
                         for layer in possible_middles {
                             middle_sum +=
-                                count_down_tree(tail_length + 1, &layer, snakes_calculated);
+                                count_down_tree(tail_length + 1, &layer, snakes_calculated, hashed_branches);
                         }
-                    },
-                );
             }
 
-            4 * corner_sum + 2 * side_sum_vertical + 2 * side_sum_horizontal + middle_sum
+            let total = 4 * corner_sum + 2 * side_sum_vertical + 2 * side_sum_horizontal + middle_sum;
+                        hashed_branches.insert((previous_layer_simple, tail_length), total);
+            total
         }
         Some(Symmetry::X) => {
             let mut possible_corners_one: Vec<Vec<u8>> = Vec::new();
@@ -570,36 +564,26 @@ fn count_down_tree(
                 side_sum = possible_sides.len() as u128;
                 middle_sum = possible_middles.len() as u128;
             } else {
-                rayon::join(
-                    || {
                         for layer in possible_corners_one {
                             corner_one_sum +=
-                                count_down_tree(tail_length + 1, &layer, snakes_calculated);
+                                count_down_tree(tail_length + 1, &layer, snakes_calculated, hashed_branches);
                         }
-                    },
-                    || {
                         for layer in possible_corners_two {
                             corner_two_sum +=
-                                count_down_tree(tail_length + 1, &layer, snakes_calculated);
+                                count_down_tree(tail_length + 1, &layer, snakes_calculated, hashed_branches);
                         }
-                    },
-                );
-                rayon::join(
-                    || {
                         for layer in possible_sides {
-                            side_sum += count_down_tree(tail_length + 1, &layer, snakes_calculated);
+                            side_sum += count_down_tree(tail_length + 1, &layer, snakes_calculated, hashed_branches);
                         }
-                    },
-                    || {
                         for layer in possible_middles {
                             middle_sum +=
-                                count_down_tree(tail_length + 1, &layer, snakes_calculated);
+                                count_down_tree(tail_length + 1, &layer, snakes_calculated, hashed_branches);
                         }
-                    },
-                );
             }
 
-            4 * side_sum + 2 * corner_one_sum + 2 * corner_two_sum + middle_sum
+            let total = 4 * side_sum + 2 * corner_one_sum + 2 * corner_two_sum + middle_sum;
+                        hashed_branches.insert((previous_layer_simple, tail_length), total);
+            total
         }
         Some(Symmetry::DiagonalDown) => {
             let mut possible_sides: Vec<Vec<u8>> = Vec::new();
@@ -628,22 +612,18 @@ fn count_down_tree(
                 side_sum = possible_sides.len() as u128;
                 middle_sum = possible_middles.len() as u128;
             } else {
-                rayon::join(
-                    || {
                         for layer in possible_sides {
-                            side_sum += count_down_tree(tail_length + 1, &layer, snakes_calculated);
+                            side_sum += count_down_tree(tail_length + 1, &layer, snakes_calculated, hashed_branches);
                         }
-                    },
-                    || {
                         for layer in possible_middles {
                             middle_sum +=
-                                count_down_tree(tail_length + 1, &layer, snakes_calculated);
+                                count_down_tree(tail_length + 1, &layer, snakes_calculated, hashed_branches);
                         }
-                    },
-                );
             }
 
-            2 * side_sum + middle_sum
+            let total = 2 * side_sum + middle_sum;
+                        hashed_branches.insert((previous_layer_simple, tail_length), total);
+            total
         }
         Some(Symmetry::DiagonalUp) => {
             let mut possible_sides: Vec<Vec<u8>> = Vec::new();
@@ -672,22 +652,18 @@ fn count_down_tree(
                 side_sum = possible_sides.len() as u128;
                 middle_sum = possible_middles.len() as u128;
             } else {
-                rayon::join(
-                    || {
                         for layer in possible_sides {
-                            side_sum += count_down_tree(tail_length + 1, &layer, snakes_calculated);
+                            side_sum += count_down_tree(tail_length + 1, &layer, snakes_calculated, hashed_branches);
                         }
-                    },
-                    || {
                         for layer in possible_middles {
                             middle_sum +=
-                                count_down_tree(tail_length + 1, &layer, snakes_calculated);
+                                count_down_tree(tail_length + 1, &layer, snakes_calculated, hashed_branches);
                         }
-                    },
-                );
             }
 
-            2 * side_sum + middle_sum
+            let total = 2 * side_sum + middle_sum;
+                        hashed_branches.insert((previous_layer_simple, tail_length), total);
+            total
         }
         None => {
             let mut first_half: Vec<Vec<u8>> = Vec::new();
@@ -717,14 +693,14 @@ fn count_down_tree(
                 sum = possible_positions.len() as u128
             } else {
                 for layer in possible_positions {
-                    sum += count_down_tree(tail_length + 1, &layer, snakes_calculated);
+                    sum += count_down_tree(tail_length + 1, &layer, snakes_calculated, hashed_branches);
                 }
             }
+            hashed_branches.insert((previous_layer_simple, tail_length), sum);
             sum
         }
     }
 }
-
 
 // 0 1 2
 // 3 4 5
@@ -734,7 +710,7 @@ enum Symmetry {
     // b c b
     // a b a
     Full,
-    
+
     // a b c
     // d e f
     // a b c
@@ -776,25 +752,26 @@ fn simplify(points: &[u8]) -> [bool; 9] {
 }
 
 fn symmetricality(points: [bool; 9]) -> Option<Symmetry> {
-    let horizontal    = points[0] == points[6] && points[1] == points[7] && points[2] == points[8];
-    let vertical      = points[0] == points[2] && points[3] == points[5] && points[6] == points[8];
+    let horizontal = points[0] == points[6] && points[1] == points[7] && points[2] == points[8];
+    let vertical = points[0] == points[2] && points[3] == points[5] && points[6] == points[8];
     let diagonal_down = points[1] == points[3] && points[2] == points[6] && points[5] == points[7];
-    let diagonal_up   = points[0] == points[8] && points[1] == points[5] && points[3] == points[7];
-    if horizontal && vertical && diagonal_down && diagonal_up {
-        Some(Symmetry::Full)
-    } else if horizontal && vertical {
-        Some(Symmetry::Plus)
-    } else if vertical {
-        Some(Symmetry::Vertical)
-    } else if horizontal {
-        Some(Symmetry::Horizontal)
-    } else if diagonal_down && diagonal_up {
-        Some(Symmetry::X)
-    } else if diagonal_down {
-        Some(Symmetry::DiagonalDown)
-    } else if diagonal_up {
-        Some(Symmetry::DiagonalUp)
-    } else {
+    let diagonal_up = points[0] == points[8] && points[1] == points[5] && points[3] == points[7];
+    // if horizontal && vertical && diagonal_down && diagonal_up {
+    //     Some(Symmetry::Full)
+    // } else 
+    // if horizontal && vertical {
+    //     Some(Symmetry::Plus)
+    // } else if vertical {
+    //     Some(Symmetry::Vertical)
+    // } else if horizontal {
+    //     Some(Symmetry::Horizontal)
+    // } else if diagonal_down && diagonal_up {
+    //     Some(Symmetry::X)
+    // } else if diagonal_down {
+    //     Some(Symmetry::DiagonalDown)
+    // } else if diagonal_up {
+    //     Some(Symmetry::DiagonalUp)
+    // } else {
         None
-    }
+    // }
 }
