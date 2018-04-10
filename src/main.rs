@@ -347,7 +347,7 @@ fn count_down_tree(
             );
             4 * sums[0] + 2 * (sums[1] + sums[2]) + sums[3]
         }
-        Some(Symmetry::X) => {
+        Some(Symmetry::DiagonalCrossing) => {
             let sums = generate_sums_of_branches(
                 &[&[0], &[2], &[3], &[4]],
                 tail_length,
@@ -454,7 +454,7 @@ enum Symmetry {
     // a b c
     // b d b
     // c b a
-    X,
+    DiagonalCrossing,
 }
 
 #[inline]
@@ -480,7 +480,7 @@ fn symmetricity(points: [bool; 9]) -> Option<Symmetry> {
     } else if horizontal {
         Some(Symmetry::Horizontal)
     } else if diagonal_down && diagonal_up {
-        Some(Symmetry::X)
+        Some(Symmetry::DiagonalCrossing)
     } else if diagonal_up {
         Some(Symmetry::DiagonalUp)
     } else if diagonal_down {
