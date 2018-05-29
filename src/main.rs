@@ -85,7 +85,6 @@ fn branches_below(
 
 // The simplest chech for if `check_pos` may need a backup. Calculates
 // if `check_pos` is `tail_length` away from any of `prev_pos_choises`
-#[inline]
 fn need_backup(prev_pos_choises: &[usize], check_pos: usize, tail_length: usize) -> bool {
     let check_pos_x = check_pos % MAP_WIDTH;
     let check_pos_y = check_pos / MAP_WIDTH;
@@ -159,7 +158,7 @@ fn get_valid_snakes(tail_length: usize, head: usize) -> FnvHashSet<[bool; MAP_WI
         positions_taken.push(head);
 
         let mut non_relative_moves = Vec::with_capacity(tail_length);
-        
+
         // Handle the first move differently as it can move in four directions
         let first_move = match moves[0] {
             0 => Moves::Up,
@@ -170,13 +169,13 @@ fn get_valid_snakes(tail_length: usize, head: usize) -> FnvHashSet<[bool; MAP_WI
         };
         let mut last_move = first_move;
         non_relative_moves.push(first_move);
-        
+
         for direction in moves.iter().take(tail_length).skip(1) {
             let chosen_move = match (last_move, *direction) {
-                (Moves::Up, 1)    | (Moves::Right, 0) | (Moves::Left, 2) => Moves::Up,
-                (Moves::Up, 2)    | (Moves::Right, 1) | (Moves::Down, 0) => Moves::Right,
-                (Moves::Right, 2) | (Moves::Down, 1)  | (Moves::Left, 0) => Moves::Down,
-                (Moves::Up, 0)    | (Moves::Down, 2)  | (Moves::Left, 1) => Moves::Left,
+                (Moves::Up, 1) | (Moves::Right, 0) | (Moves::Left, 2) => Moves::Up,
+                (Moves::Up, 2) | (Moves::Right, 1) | (Moves::Down, 0) => Moves::Right,
+                (Moves::Right, 2) | (Moves::Down, 1) | (Moves::Left, 0) => Moves::Down,
+                (Moves::Up, 0) | (Moves::Down, 2) | (Moves::Left, 1) => Moves::Left,
                 _ => unreachable!(),
             };
             last_move = chosen_move;
@@ -303,92 +302,32 @@ fn count_down_tree(
         Some(value) => return *value,
         None => {}
     }
-    let total_sum = match symmetricity(previous_layer_simple) {
-        Some(Symmetry::Horizontal) => {
-            let sums = generate_sums_of_branches(
-                &[&[0, 1, 2], &[3, 4, 5]],
-                tail_length,
-                snakes_calculated,
-                hashed_branches,
-                previous_layer,
-            );
-
-            2 * sums[0] + sums[1]
-        }
-        Some(Symmetry::Vertical) => {
-            let sums = generate_sums_of_branches(
-                &[&[0, 3, 6], &[1, 4, 7]],
-                tail_length,
-                snakes_calculated,
-                hashed_branches,
-                previous_layer,
-            );
-
-            2 * sums[0] + sums[1]
-        }
-        Some(Symmetry::Full) => {
-            let sums = generate_sums_of_branches(
-                &[&[0], &[1], &[4]],
-                tail_length,
-                snakes_calculated,
-                hashed_branches,
-                previous_layer,
-            );
-
-            4 * sums[0] + 4 * sums[1] + sums[2]
-        }
-        Some(Symmetry::Plus) => {
-            let sums = generate_sums_of_branches(
-                &[&[0], &[1], &[3], &[4]],
-                tail_length,
-                snakes_calculated,
-                hashed_branches,
-                previous_layer,
-            );
-            4 * sums[0] + 2 * (sums[1] + sums[2]) + sums[3]
-        }
-        Some(Symmetry::DiagonalCrossing) => {
-            let sums = generate_sums_of_branches(
-                &[&[0], &[2], &[3], &[4]],
-                tail_length,
-                snakes_calculated,
-                hashed_branches,
-                previous_layer,
-            );
-            2 * (sums[0] + sums[1]) + 4 * sums[2] + sums[3]
-        }
-        Some(Symmetry::DiagonalDown) => {
-            let sums = generate_sums_of_branches(
-                &[&[1, 2, 5], &[0, 4, 8]],
-                tail_length,
-                snakes_calculated,
-                hashed_branches,
-                previous_layer,
-            );
-
-            2 * sums[0] + sums[1]
-        }
-        Some(Symmetry::DiagonalUp) => {
-            let sums = generate_sums_of_branches(
-                &[&[0, 1, 3], &[2, 4, 6]],
-                tail_length,
-                snakes_calculated,
-                hashed_branches,
-                previous_layer,
-            );
-
-            2 * sums[0] + sums[1]
-        }
-        None => {
-            let sums = generate_sums_of_branches(
-                &[&[0, 1, 2, 3, 4, 5, 6, 7, 8]],
-                tail_length,
-                snakes_calculated,
-                hashed_branches,
-                previous_layer,
-            );
-            sums[0]
-        }
+    let symmetricity = symmetricity(previous_layer_simple);
+    let sums = generate_sums_of_branches(
+        match symmetricity {
+            Symmetry::Horizontal => &[&[0, 1, 2], &[3, 4, 5]],
+            Symmetry::Vertical => &[&[0, 3, 6], &[1, 4, 7]],
+            Symmetry::Full => &[&[0], &[1], &[4]],
+            Symmetry::Plus => &[&[0], &[1], &[3], &[4]],
+            Symmetry::DiagonalCrossing => &[&[0], &[2], &[3], &[4]],
+            Symmetry::DiagonalDown => &[&[1, 2, 5], &[0, 4, 8]],
+            Symmetry::DiagonalUp => &[&[0, 1, 3], &[2, 4, 6]],
+            Symmetry::None => &[&[0, 1, 2, 3, 4, 5, 6, 7, 8]],
+        },
+        tail_length,
+        snakes_calculated,
+        hashed_branches,
+        previous_layer,
+    );
+    let total_sum = match symmetricity {
+        Symmetry::Horizontal => 2 * sums[0] + sums[1],
+        Symmetry::Vertical => 2 * sums[0] + sums[1],
+        Symmetry::Full => 4 * sums[0] + 4 * sums[1] + sums[2],
+        Symmetry::Plus => 4 * sums[0] + 2 * (sums[1] + sums[2]) + sums[3],
+        Symmetry::DiagonalCrossing => 2 * (sums[0] + sums[1]) + 4 * sums[2] + sums[3],
+        Symmetry::DiagonalDown => 2 * sums[0] + sums[1],
+        Symmetry::DiagonalUp => 2 * sums[0] + sums[1],
+        Symmetry::None => sums[0],
     };
     hashed_branches.insert((previous_layer_simple, tail_length), total_sum);
     total_sum
@@ -455,9 +394,13 @@ enum Symmetry {
     // b d b
     // c b a
     DiagonalCrossing,
+
+    // a b c
+    // d e f
+    // g h i
+    None,
 }
 
-#[inline]
 fn simplify(points: &[usize]) -> [bool; 9] {
     let mut simple_format = [false; 9];
     for pos in points {
@@ -466,26 +409,26 @@ fn simplify(points: &[usize]) -> [bool; 9] {
     simple_format
 }
 
-fn symmetricity(points: [bool; 9]) -> Option<Symmetry> {
+fn symmetricity(points: [bool; 9]) -> Symmetry {
     let horizontal = points[0] == points[6] && points[1] == points[7] && points[2] == points[8];
     let vertical = points[0] == points[2] && points[3] == points[5] && points[6] == points[8];
     let diagonal_down = points[1] == points[3] && points[2] == points[6] && points[5] == points[7];
     let diagonal_up = points[0] == points[8] && points[1] == points[5] && points[3] == points[7];
     if horizontal && vertical && diagonal_down && diagonal_up {
-        Some(Symmetry::Full)
+        Symmetry::Full
     } else if horizontal && vertical {
-        Some(Symmetry::Plus)
+        Symmetry::Plus
     } else if vertical {
-        Some(Symmetry::Vertical)
+        Symmetry::Vertical
     } else if horizontal {
-        Some(Symmetry::Horizontal)
+        Symmetry::Horizontal
     } else if diagonal_down && diagonal_up {
-        Some(Symmetry::DiagonalCrossing)
+        Symmetry::DiagonalCrossing
     } else if diagonal_up {
-        Some(Symmetry::DiagonalUp)
+        Symmetry::DiagonalUp
     } else if diagonal_down {
-        Some(Symmetry::DiagonalDown)
+        Symmetry::DiagonalDown
     } else {
-        None
+        Symmetry::None
     }
 }
