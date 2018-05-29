@@ -71,7 +71,7 @@ fn branches_below(
             }
         } else {
             // Our output is valid
-            let mut out = output[0..=output_n].to_vec();
+            let out = output[0..=output_n].to_vec();
             output_vec.push(out);
 
             output[output_n] += 1;
