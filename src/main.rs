@@ -303,17 +303,18 @@ fn count_down_tree(
         None => {}
     }
     let symmetricity = symmetricity(previous_layer_simple);
+    let groups: &[&[usize]] = match symmetricity {
+        Symmetry::Horizontal => &[&[0, 1, 2], &[3, 4, 5]],
+        Symmetry::Vertical => &[&[0, 3, 6], &[1, 4, 7]],
+        Symmetry::Full => &[&[0], &[1], &[4]],
+        Symmetry::Plus => &[&[0], &[1], &[3], &[4]],
+        Symmetry::DiagonalCrossing => &[&[0], &[2], &[3], &[4]],
+        Symmetry::DiagonalDown => &[&[1, 2, 5], &[0, 4, 8]],
+        Symmetry::DiagonalUp => &[&[0, 1, 3], &[2, 4, 6]],
+        Symmetry::None => &[&[0, 1, 2, 3, 4, 5, 6, 7, 8]],
+    };
     let sums = generate_sums_of_branches(
-        match symmetricity {
-            Symmetry::Horizontal => &[&[0, 1, 2], &[3, 4, 5]],
-            Symmetry::Vertical => &[&[0, 3, 6], &[1, 4, 7]],
-            Symmetry::Full => &[&[0], &[1], &[4]],
-            Symmetry::Plus => &[&[0], &[1], &[3], &[4]],
-            Symmetry::DiagonalCrossing => &[&[0], &[2], &[3], &[4]],
-            Symmetry::DiagonalDown => &[&[1, 2, 5], &[0, 4, 8]],
-            Symmetry::DiagonalUp => &[&[0, 1, 3], &[2, 4, 6]],
-            Symmetry::None => &[&[0, 1, 2, 3, 4, 5, 6, 7, 8]],
-        },
+        groups,
         tail_length,
         snakes_calculated,
         hashed_branches,
