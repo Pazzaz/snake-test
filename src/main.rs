@@ -82,7 +82,6 @@ fn branches_below(
 // The simplest chech for if `check_pos` may need a backup. Calculates
 // if `check_pos` is `tail_length` away from any of `prev_pos_choises`
 fn need_backup(prev_pos_choises: u16, check_pos: u16, tail_length: usize) -> bool {
-    // FIXME: Converting back here may be unnecessary
     let check_pos = check_pos.trailing_zeros() as usize;
     let check_pos_x = check_pos % MAP_WIDTH;
     let check_pos_y = check_pos / MAP_WIDTH;
