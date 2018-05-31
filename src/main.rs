@@ -7,12 +7,92 @@ use std::collections::HashMap;
 const MAP_WIDTH: usize = 3;
 const SEARCH_LENGTH: usize = 6;
 
-#[derive(Clone, Copy)]
-enum Moves {
-    Up,
-    Right,
-    Down,
-    Left,
+fn main() {
+    // Prepare Hashmap
+    let snakes_calculated = prepare_hashmap();
+
+    let mut hashed_branches = FnvHashMap::default();
+    let corners = count_down_tree(1, 1 << 0, &snakes_calculated, &mut hashed_branches);
+    let side = count_down_tree(1, 1 << 1, &snakes_calculated, &mut hashed_branches);
+    let middle = count_down_tree(1, 1 << 4, &snakes_calculated, &mut hashed_branches);
+    let final_value = 4 * corners + 4 * side + middle;
+    println!("{}", final_value);
+}
+
+fn count_down_tree(
+    tail_length: usize,
+    previous_layer: u16,
+    snakes_calculated: &HashMap<(usize, usize), FnvHashSet<u16>>,
+    hashed_branches: &mut FnvHashMap<(u16, usize), u128>,
+) -> u128 {
+    match hashed_branches.get(&(previous_layer, tail_length)) {
+        Some(value) => return *value,
+        None => {}
+    }
+    let symmetricity = symmetricity(previous_layer);
+    let groups: &[u16] = match symmetricity {
+        Symmetry::Horizontal => &[0b_0_0000_0111, 0b_0_0011_1000],
+        Symmetry::Vertical => &[0b_0_0100_1001, 0b_0_1001_0010],
+        Symmetry::Full => &[0b_0_0000_0001, 0b_0_0000_0010, 0b_0_0001_0000],
+        Symmetry::Plus => &[
+            0b_0_0000_0001,
+            0b_0_0000_0010,
+            0b_0_0000_1000,
+            0b_0_0001_0000,
+        ],
+        Symmetry::DiagonalCrossing => &[
+            0b_0_0000_0001,
+            0b_0_0000_0100,
+            0b_0_0000_1000,
+            0b_0_0001_0000,
+        ],
+        Symmetry::DiagonalDown => &[0b_0_0010_0110, 0b_1_0001_0001],
+        Symmetry::DiagonalUp => &[0b_0_0000_1011, 0b_0_0101_0100],
+        Symmetry::None => &[0b_1_1111_1111],
+    };
+    let sums = generate_sums_of_branches(
+        groups,
+        tail_length,
+        snakes_calculated,
+        hashed_branches,
+        previous_layer,
+    );
+    let total_sum = match symmetricity {
+        Symmetry::Horizontal => 2 * sums[0] + sums[1],
+        Symmetry::Vertical => 2 * sums[0] + sums[1],
+        Symmetry::Full => 4 * sums[0] + 4 * sums[1] + sums[2],
+        Symmetry::Plus => 4 * sums[0] + 2 * (sums[1] + sums[2]) + sums[3],
+        Symmetry::DiagonalCrossing => 2 * (sums[0] + sums[1]) + 4 * sums[2] + sums[3],
+        Symmetry::DiagonalDown => 2 * sums[0] + sums[1],
+        Symmetry::DiagonalUp => 2 * sums[0] + sums[1],
+        Symmetry::None => sums[0],
+    };
+    hashed_branches.insert((previous_layer, tail_length), total_sum);
+    total_sum
+}
+
+fn generate_sums_of_branches(
+    groups: &[u16],
+    tail_length: usize,
+    snakes_calculated: &HashMap<(usize, usize), FnvHashSet<u16>>,
+    hashed_branches: &mut FnvHashMap<(u16, usize), u128>,
+    previous_layer: u16,
+) -> Vec<u128> {
+    let mut group_sums = Vec::new();
+    for group in groups {
+        let branches: Vec<u16> =
+            branches_below(*group, previous_layer, tail_length, snakes_calculated);
+        let mut sum = 0;
+        if tail_length == SEARCH_LENGTH {
+            sum = branches.len() as u128;
+        } else {
+            for layer in branches {
+                sum += count_down_tree(tail_length + 1, layer, snakes_calculated, hashed_branches);
+            }
+        }
+        group_sums.push(sum)
+    }
+    group_sums
 }
 
 fn branches_below(
@@ -75,6 +155,11 @@ fn branches_below(
     }
     output_vec
 }
+
+fn combine_positions(positions: &[u16]) -> u16 {
+    positions.iter().fold(0, |acc, n| acc | n)
+}
+
 // The simplest chech for if `check_pos` may need a backup. Calculates
 // if `check_pos` is `tail_length` away from any of `prev_pos_choises`
 fn need_backup(prev_pos_choises: u16, check_pos: u16, tail_length: usize) -> bool {
@@ -115,30 +200,24 @@ fn could_block_all(
     false
 }
 
-// Not neccessarily valid moves
-fn generate_moves(max: usize) -> Vec<[usize; MAP_WIDTH * MAP_WIDTH - 1]> {
-    let mut all_moves: Vec<[usize; MAP_WIDTH * MAP_WIDTH - 1]> = Vec::new();
-    let mut current_move = [0; (MAP_WIDTH * MAP_WIDTH) - 1];
-    let mut start = true;
-    'outer: loop {
-        let mut i = 0;
-        if start {
-            start = false
-        } else {
-            current_move[i] += 1;
+fn prepare_hashmap() -> HashMap<(usize, usize), FnvHashSet<u16>> {
+    let mut snakes_calculated = HashMap::new();
+    for o in 0..9 {
+        for p in 1..8 {
+            snakes_calculated
+                .entry((o, p))
+                .or_insert_with(|| get_valid_snakes(p, o));
         }
-
-        while (i == 0 && current_move[0] == 4) || (i != 0 && current_move[i] == 3) {
-            current_move[i] = 0;
-            i += 1;
-            if i == max {
-                break 'outer;
-            }
-            current_move[i] += 1;
-        }
-        all_moves.push(current_move);
     }
-    all_moves
+    snakes_calculated
+}
+
+#[derive(Clone, Copy)]
+enum Moves {
+    Up,
+    Right,
+    Down,
+    Left,
 }
 
 fn get_valid_snakes(tail_length: usize, head: usize) -> FnvHashSet<u16> {
@@ -222,114 +301,37 @@ fn get_valid_snakes(tail_length: usize, head: usize) -> FnvHashSet<u16> {
     possible_blocks
 }
 
+// Not neccessarily valid moves
+fn generate_moves(max: usize) -> Vec<[usize; MAP_WIDTH * MAP_WIDTH - 1]> {
+    let mut all_moves: Vec<[usize; MAP_WIDTH * MAP_WIDTH - 1]> = Vec::new();
+    let mut current_move = [0; (MAP_WIDTH * MAP_WIDTH) - 1];
+    let mut start = true;
+    'outer: loop {
+        let mut i = 0;
+        if start {
+            start = false
+        } else {
+            current_move[i] += 1;
+        }
+
+        while (i == 0 && current_move[0] == 4) || (i != 0 && current_move[i] == 3) {
+            current_move[i] = 0;
+            i += 1;
+            if i == max {
+                break 'outer;
+            }
+            current_move[i] += 1;
+        }
+        all_moves.push(current_move);
+    }
+    all_moves
+}
+
 fn insert_permutations_for_u16(list: u16, possible_blocks: &mut FnvHashSet<u16>) {
     possible_blocks.insert(list);
     for perm in 0..=0b_1_1111_1111 {
         possible_blocks.insert(list & perm);
     }
-}
-
-fn prepare_hashmap() -> HashMap<(usize, usize), FnvHashSet<u16>> {
-    let mut snakes_calculated = HashMap::new();
-    for o in 0..9 {
-        for p in 1..8 {
-            snakes_calculated
-                .entry((o, p))
-                .or_insert_with(|| get_valid_snakes(p, o));
-        }
-    }
-    snakes_calculated
-}
-fn main() {
-    // Prepare Hashmap
-    let snakes_calculated = prepare_hashmap();
-    println!("Done generating");
-    let mut hashed_branches = FnvHashMap::default();
-    let corners = count_down_tree(1, 1 << 0, &snakes_calculated, &mut hashed_branches);
-    println!("{}", corners);
-    let side = count_down_tree(1, 1 << 1, &snakes_calculated, &mut hashed_branches);
-    println!("{}", side);
-    let middle = count_down_tree(1, 1 << 4, &snakes_calculated, &mut hashed_branches);
-    println!("{}", middle);
-    let final_value = 4 * corners + 4 * side + middle;
-    println!("{}", final_value);
-}
-
-fn count_down_tree(
-    tail_length: usize,
-    previous_layer: u16,
-    snakes_calculated: &HashMap<(usize, usize), FnvHashSet<u16>>,
-    hashed_branches: &mut FnvHashMap<(u16, usize), u128>,
-) -> u128 {
-    let previous_layer_u16 = previous_layer;
-    match hashed_branches.get(&(previous_layer_u16, tail_length)) {
-        Some(value) => return *value,
-        None => {}
-    }
-    let symmetricity = alternative_symmetricity(previous_layer_u16);
-    let groups: &[u16] = match symmetricity {
-        Symmetry::Horizontal => &[0b_0_0000_0111, 0b_0_0011_1000],
-        Symmetry::Vertical => &[0b_0_0100_1001, 0b_0_1001_0010],
-        Symmetry::Full => &[0b_0_0000_0001, 0b_0_0000_0010, 0b_0_0001_0000],
-        Symmetry::Plus => &[
-            0b_0_0000_0001,
-            0b_0_0000_0010,
-            0b_0_0000_1000,
-            0b_0_0001_0000,
-        ],
-        Symmetry::DiagonalCrossing => &[
-            0b_0_0000_0001,
-            0b_0_0000_0100,
-            0b_0_0000_1000,
-            0b_0_0001_0000,
-        ],
-        Symmetry::DiagonalDown => &[0b_0_0010_0110, 0b_1_0001_0001],
-        Symmetry::DiagonalUp => &[0b_0_0000_1011, 0b_0_0101_0100],
-        Symmetry::None => &[0b_1_1111_1111],
-    };
-    let sums = generate_sums_of_branches(
-        groups,
-        tail_length,
-        snakes_calculated,
-        hashed_branches,
-        previous_layer,
-    );
-    let total_sum = match symmetricity {
-        Symmetry::Horizontal => 2 * sums[0] + sums[1],
-        Symmetry::Vertical => 2 * sums[0] + sums[1],
-        Symmetry::Full => 4 * sums[0] + 4 * sums[1] + sums[2],
-        Symmetry::Plus => 4 * sums[0] + 2 * (sums[1] + sums[2]) + sums[3],
-        Symmetry::DiagonalCrossing => 2 * (sums[0] + sums[1]) + 4 * sums[2] + sums[3],
-        Symmetry::DiagonalDown => 2 * sums[0] + sums[1],
-        Symmetry::DiagonalUp => 2 * sums[0] + sums[1],
-        Symmetry::None => sums[0],
-    };
-    hashed_branches.insert((previous_layer_u16, tail_length), total_sum);
-    total_sum
-}
-
-fn generate_sums_of_branches(
-    groups: &[u16],
-    tail_length: usize,
-    snakes_calculated: &HashMap<(usize, usize), FnvHashSet<u16>>,
-    hashed_branches: &mut FnvHashMap<(u16, usize), u128>,
-    previous_layer: u16,
-) -> Vec<u128> {
-    let mut group_sums = Vec::new();
-    for group in groups {
-        let branches: Vec<u16> =
-            branches_below(*group, previous_layer, tail_length, snakes_calculated);
-        let mut sum = 0;
-        if tail_length == SEARCH_LENGTH {
-            sum = branches.len() as u128;
-        } else {
-            for layer in branches {
-                sum += count_down_tree(tail_length + 1, layer, snakes_calculated, hashed_branches);
-            }
-        }
-        group_sums.push(sum)
-    }
-    group_sums
 }
 
 // 0 1 2
@@ -385,11 +387,7 @@ fn positions_to_u16(positions: &[usize]) -> u16 {
     out
 }
 
-fn combine_positions(positions: &[u16]) -> u16 {
-    positions.iter().fold(0, |acc, n| acc | n)
-}
-
-fn alternative_symmetricity(points_n: u16) -> Symmetry {
+fn symmetricity(points_n: u16) -> Symmetry {
     let shifted_six = points_n >> 6 & points_n;
     let horizontal = (shifted_six & 0b0000_0111) == 0b0000_0111;
     let shifted_two = points_n >> 2 & points_n;
