@@ -76,9 +76,6 @@ fn branches_below(
             output_vec.push(out);
 
             output[output_n] <<= 1;
-            if output[0] == (1 << 9) {
-                break;
-            }
         }
     }
     output_vec
