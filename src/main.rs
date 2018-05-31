@@ -17,97 +17,108 @@ enum Moves {
 
 fn branches_below(
     main_positions: &[usize],
-    previous_choises: &[usize],
+    previous_choises: u16,
     tail_length: usize,
     snakes_calculated: &HashMap<(usize, usize), FnvHashSet<u16>>,
-) -> Vec<Vec<usize>> {
-    let mut output = [0, 0, 0, 0, 0, 0, 0, 0, 0];
+) -> Vec<u16> {
+    let mut output: [u16; 9] = [1, 1, 1, 1, 1, 1, 1, 1, 1];
+    let converted_main_positions = positions_to_u16(main_positions);
     let mut output_n = 0;
     let mut output_vec = Vec::new();
     loop {
-        if output_n == 0 && !main_positions.contains(&output[0]) {
-            output[0] += 1;
-            if output[0] >= 9 {
+        if output_n == 0 && converted_main_positions & output[0] == 0 {
+            output[0] <<= 1;
+            if output[0] >= (1 << 9) {
                 break;
             }
-        } else if output[output_n] >= (MAP_WIDTH * MAP_WIDTH) {
+        } else if output[output_n] >= (1 << 9) {
             // When we've iterated up to MAP_WIDTH*MAP_WIDTH then we've gone through all values
             // needed for that positions and can increment the previous position
-            output[output_n] = 0;
+            output[output_n] = 1;
             output_n -= 1;
-            output[output_n] += 1;
-            if output[0] == (MAP_WIDTH * MAP_WIDTH) {
+            output[output_n] <<= 1;
+            if output[0] == (1 << 9) {
                 break;
             }
         } else if (
                 // We can't choose the same value as what we know was the value the last time
-                previous_choises.len() == 1 &&
-                previous_choises[0] == output[output_n]
+                previous_choises == output[output_n]
             ) ||
                 // If the last element of our output exists elsewhere in our array,
                 // it's an invalid value and we need to get a new one
                  {
                     let (last, rest) = output[0..=output_n].split_last().unwrap();
-                    rest.contains(last)
+                    let taken_positions = combine_positions(rest);
+                    taken_positions & last != 0
                 } {
-            output[output_n] += 1;
+            output[output_n] <<= 1;
         } else if output_n + 1 < (tail_length + 2)
-            && need_backup(&previous_choises, output[output_n], tail_length)
+            && need_backup(previous_choises, output[output_n], tail_length)
             && could_block_all(
-                &previous_choises,
-                &output[0..=output_n],
+                previous_choises,
+                combine_positions(&output[0..=output_n]),
                 &snakes_calculated,
                 tail_length,
             ) {
             // Add another backup value if we need it
-            for backup in 0..(MAP_WIDTH * MAP_WIDTH) {
-                if !output[0..=output_n].contains(&backup) {
+            let mut new_value = 1;
+            while new_value != (1 << 9) {
+                if !output[0..=output_n].contains(&new_value) {
                     output_n += 1;
-                    output[output_n] = backup;
+                    output[output_n] = new_value;
                     break;
                 }
+                new_value <<= 1;
             }
         } else {
             // Our output is valid
-            let out = output[0..=output_n].to_vec();
+            let out = combine_positions(&output[0..=output_n]);
             output_vec.push(out);
 
-            output[output_n] += 1;
+            output[output_n] <<= 1;
+            if output[0] == (1 << 9) {
+                break;
+            }
         }
     }
     output_vec
 }
 // The simplest chech for if `check_pos` may need a backup. Calculates
 // if `check_pos` is `tail_length` away from any of `prev_pos_choises`
-fn need_backup(prev_pos_choises: &[usize], check_pos: usize, tail_length: usize) -> bool {
+fn need_backup(prev_pos_choises: u16, check_pos: u16, tail_length: usize) -> bool {
+    // FIXME: Converting back here may be unnecessary
+    let check_pos = check_pos.trailing_zeros() as usize;
     let check_pos_x = check_pos % MAP_WIDTH;
     let check_pos_y = check_pos / MAP_WIDTH;
-    prev_pos_choises.iter().any(|choise| {
-        let prev_pos_x = choise % MAP_WIDTH;
-        let prev_pos_y = choise / MAP_WIDTH;
-        if (prev_pos_x as i8 - check_pos_x as i8).abs()
-            + (prev_pos_y as i8 - check_pos_y as i8).abs() <= tail_length as i8
-        {
-            return true;
+    for i in 0..9 {
+        if (1 << i) & prev_pos_choises != 0 {
+            let prev_pos_x = i % MAP_WIDTH;
+            let prev_pos_y = i / MAP_WIDTH;
+            if (prev_pos_x as i8 - check_pos_x as i8).abs()
+                + (prev_pos_y as i8 - check_pos_y as i8).abs() <= tail_length as i8
+            {
+                return true;
+            }
         }
-        false
-    })
+    }
+    false
 }
 
 fn could_block_all(
-    head_positions: &[usize],
-    chosen_positions: &[usize],
+    head_positions: u16,
+    chosen_positions: u16,
     snakes_calculated: &HashMap<(usize, usize), FnvHashSet<u16>>,
     tail_length: usize,
 ) -> bool {
-    'outer_for_loop: for head in head_positions {
-        let possible_snakes = match snakes_calculated.get(&(*head, tail_length)) {
-            Some(x) => x,
-            None => panic!("WRONG"),
-        };
-        let simple = positions_to_u16(chosen_positions);
-        if possible_snakes.contains(&simple) {
-            return true;
+    for head in 0..9 {
+        if (1 << head) & head_positions != 0 {
+            let possible_snakes = match snakes_calculated.get(&(head, tail_length)) {
+                Some(x) => x,
+                None => panic!("WRONG"),
+            };
+            if possible_snakes.contains(&chosen_positions) {
+                return true;
+            }
         }
     }
     false
@@ -222,7 +233,7 @@ fn get_valid_snakes(tail_length: usize, head: usize) -> FnvHashSet<u16> {
 
 fn insert_permutations_for_u16(list: u16, possible_blocks: &mut FnvHashSet<u16>) {
     possible_blocks.insert(list);
-    for perm in 0..=0b111111111 {
+    for perm in 0..=0b_1_1111_1111 {
         possible_blocks.insert(list & perm);
     }
 }
@@ -247,11 +258,11 @@ fn main() {
 fn don(snakes_calculated: HashMap<(usize, usize), FnvHashSet<u16>>) {
     println!("Done generating");
     let mut hashed_branches = FnvHashMap::default();
-    let corners = count_down_tree(1, &[0], &snakes_calculated, &mut hashed_branches);
+    let corners = count_down_tree(1, 1 << 0, &snakes_calculated, &mut hashed_branches);
     println!("{}", corners);
-    let side = count_down_tree(1, &[1], &snakes_calculated, &mut hashed_branches);
+    let side = count_down_tree(1, 1 << 1, &snakes_calculated, &mut hashed_branches);
     println!("{}", side);
-    let middle = count_down_tree(1, &[4], &snakes_calculated, &mut hashed_branches);
+    let middle = count_down_tree(1, 1 << 4, &snakes_calculated, &mut hashed_branches);
     println!("{}", middle);
     let final_value = 4 * corners + 4 * side + middle;
     println!("{}", final_value);
@@ -259,11 +270,11 @@ fn don(snakes_calculated: HashMap<(usize, usize), FnvHashSet<u16>>) {
 
 fn count_down_tree(
     tail_length: usize,
-    previous_layer: &[usize],
+    previous_layer: u16,
     snakes_calculated: &HashMap<(usize, usize), FnvHashSet<u16>>,
     hashed_branches: &mut FnvHashMap<(u16, usize), u128>,
 ) -> u128 {
-    let previous_layer_u16 = positions_to_u16(previous_layer);
+    let previous_layer_u16 = previous_layer;
     match hashed_branches.get(&(previous_layer_u16, tail_length)) {
         Some(value) => return *value,
         None => {}
@@ -305,17 +316,18 @@ fn generate_sums_of_branches(
     tail_length: usize,
     snakes_calculated: &HashMap<(usize, usize), FnvHashSet<u16>>,
     hashed_branches: &mut FnvHashMap<(u16, usize), u128>,
-    previous_layer: &[usize],
+    previous_layer: u16,
 ) -> Vec<u128> {
     let mut group_sums = Vec::new();
     for group in groups {
-        let branches = branches_below(group, previous_layer, tail_length, snakes_calculated);
+        let branches: Vec<u16> =
+            branches_below(group, previous_layer, tail_length, snakes_calculated);
         let mut sum = 0;
         if tail_length == SEARCH_LENGTH {
             sum = branches.len() as u128;
         } else {
             for layer in branches {
-                sum += count_down_tree(tail_length + 1, &layer, snakes_calculated, hashed_branches);
+                sum += count_down_tree(tail_length + 1, layer, snakes_calculated, hashed_branches);
             }
         }
         group_sums.push(sum)
@@ -374,6 +386,10 @@ fn positions_to_u16(positions: &[usize]) -> u16 {
         out += 2u16.pow(*i as u32);
     }
     out
+}
+
+fn combine_positions(positions: &[u16]) -> u16 {
+    positions.iter().fold(0, |acc, n| acc | n)
 }
 
 fn alternative_symmetricity(points_n: u16) -> Symmetry {
