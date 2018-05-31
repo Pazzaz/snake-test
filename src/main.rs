@@ -73,9 +73,6 @@ fn branches_below(
             output_vec.push(out);
 
             output[output_n] += 1;
-            if output[0] == (MAP_WIDTH * MAP_WIDTH) {
-                break;
-            }
         }
     }
     output_vec
