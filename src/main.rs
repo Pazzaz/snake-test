@@ -21,35 +21,31 @@ fn branches_below(
     tail_length: usize,
     snakes_calculated: &HashMap<(usize, usize), FnvHashSet<u16>>,
 ) -> Vec<u16> {
-    let mut output: [u16; 9] = [1, 1, 1, 1, 1, 1, 1, 1, 1];
+    let mut output: [u16; 9] = [1; 9];
     let mut output_n = 0;
     let mut output_vec = Vec::new();
     loop {
+        assert!(output_n <= 8);
         if output_n == 0 && main_positions & output[0] == 0 {
             output[0] <<= 1;
             if output[0] >= (1 << 9) {
                 break;
             }
         } else if output[output_n] >= (1 << 9) {
-            // When we've iterated up to MAP_WIDTH*MAP_WIDTH then we've gone through all values
-            // needed for that positions and can increment the previous position
+            // When we've iterated up to 9 then we've gone through all values
+            // needed for that position and can increment the previous position
             output[output_n] = 1;
             output_n -= 1;
             output[output_n] <<= 1;
             if output[0] == (1 << 9) {
                 break;
             }
-        } else if (
-                // We can't choose the same value as what we know was the value the last time
-                previous_choises == output[output_n]
-            ) ||
-                // If the last element of our output exists elsewhere in our array,
-                // it's an invalid value and we need to get a new one
-                 {
-                    let (last, rest) = output[0..=output_n].split_last().unwrap();
-                    let taken_positions = combine_positions(rest);
-                    taken_positions & last != 0
-                } {
+        } else if previous_choises == output[output_n]
+            || output[0..output_n].contains(&output[output_n])
+        {
+            // We can't choose the same value as what we know was the value the last time
+            // and if the last element of our output exists elsewhere in our array,
+            // it's an invalid value and we need to get a new one
             output[output_n] <<= 1;
         } else if output_n + 1 < (tail_length + 2)
             && need_backup(previous_choises, output[output_n], tail_length)
@@ -119,7 +115,7 @@ fn could_block_all(
     false
 }
 
-// Not neccessirarily valid moves
+// Not neccessarily valid moves
 fn generate_moves(max: usize) -> Vec<[usize; MAP_WIDTH * MAP_WIDTH - 1]> {
     let mut all_moves: Vec<[usize; MAP_WIDTH * MAP_WIDTH - 1]> = Vec::new();
     let mut current_move = [0; (MAP_WIDTH * MAP_WIDTH) - 1];
@@ -247,10 +243,6 @@ fn prepare_hashmap() -> HashMap<(usize, usize), FnvHashSet<u16>> {
 fn main() {
     // Prepare Hashmap
     let snakes_calculated = prepare_hashmap();
-    don(snakes_calculated);
-}
-
-fn don(snakes_calculated: HashMap<(usize, usize), FnvHashSet<u16>>) {
     println!("Done generating");
     let mut hashed_branches = FnvHashMap::default();
     let corners = count_down_tree(1, 1 << 0, &snakes_calculated, &mut hashed_branches);
@@ -279,9 +271,19 @@ fn count_down_tree(
         Symmetry::Horizontal => &[0b_0_0000_0111, 0b_0_0011_1000],
         Symmetry::Vertical => &[0b_0_0100_1001, 0b_0_1001_0010],
         Symmetry::Full => &[0b_0_0000_0001, 0b_0_0000_0010, 0b_0_0001_0000],
-        Symmetry::Plus => &[0b_0_0000_0001, 0b_0_0000_0010, 0b_0_0000_1000, 0b_0_0001_0000],
-        Symmetry::DiagonalCrossing => &[0b_0_0000_0001, 0b_0_0000_0100, 0b_0_0000_1000, 0b_0_0001_0000],
-        Symmetry::DiagonalDown => &[0b_0_0010_0110,  0b_1_0001_0001],
+        Symmetry::Plus => &[
+            0b_0_0000_0001,
+            0b_0_0000_0010,
+            0b_0_0000_1000,
+            0b_0_0001_0000,
+        ],
+        Symmetry::DiagonalCrossing => &[
+            0b_0_0000_0001,
+            0b_0_0000_0100,
+            0b_0_0000_1000,
+            0b_0_0001_0000,
+        ],
+        Symmetry::DiagonalDown => &[0b_0_0010_0110, 0b_1_0001_0001],
         Symmetry::DiagonalUp => &[0b_0_0000_1011, 0b_0_0101_0100],
         Symmetry::None => &[0b_1_1111_1111],
     };
