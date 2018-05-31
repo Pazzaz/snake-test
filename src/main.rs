@@ -16,17 +16,16 @@ enum Moves {
 }
 
 fn branches_below(
-    main_positions: &[usize],
+    main_positions: u16,
     previous_choises: u16,
     tail_length: usize,
     snakes_calculated: &HashMap<(usize, usize), FnvHashSet<u16>>,
 ) -> Vec<u16> {
     let mut output: [u16; 9] = [1, 1, 1, 1, 1, 1, 1, 1, 1];
-    let converted_main_positions = positions_to_u16(main_positions);
     let mut output_n = 0;
     let mut output_vec = Vec::new();
     loop {
-        if output_n == 0 && converted_main_positions & output[0] == 0 {
+        if output_n == 0 && main_positions & output[0] == 0 {
             output[0] <<= 1;
             if output[0] >= (1 << 9) {
                 break;
@@ -277,15 +276,15 @@ fn count_down_tree(
         None => {}
     }
     let symmetricity = alternative_symmetricity(previous_layer_u16);
-    let groups: &[&[usize]] = match symmetricity {
-        Symmetry::Horizontal => &[&[0, 1, 2], &[3, 4, 5]],
-        Symmetry::Vertical => &[&[0, 3, 6], &[1, 4, 7]],
-        Symmetry::Full => &[&[0], &[1], &[4]],
-        Symmetry::Plus => &[&[0], &[1], &[3], &[4]],
-        Symmetry::DiagonalCrossing => &[&[0], &[2], &[3], &[4]],
-        Symmetry::DiagonalDown => &[&[1, 2, 5], &[0, 4, 8]],
-        Symmetry::DiagonalUp => &[&[0, 1, 3], &[2, 4, 6]],
-        Symmetry::None => &[&[0, 1, 2, 3, 4, 5, 6, 7, 8]],
+    let groups: &[u16] = match symmetricity {
+        Symmetry::Horizontal => &[0b_0_0000_0111, 0b_0_0011_1000],
+        Symmetry::Vertical => &[0b_0_0100_1001, 0b_0_1001_0010],
+        Symmetry::Full => &[0b_0_0000_0001, 0b_0_0000_0010, 0b_0_0001_0000],
+        Symmetry::Plus => &[0b_0_0000_0001, 0b_0_0000_0010, 0b_0_0000_1000, 0b_0_0001_0000],
+        Symmetry::DiagonalCrossing => &[0b_0_0000_0001, 0b_0_0000_0100, 0b_0_0000_1000, 0b_0_0001_0000],
+        Symmetry::DiagonalDown => &[0b_0_0010_0110,  0b_1_0001_0001],
+        Symmetry::DiagonalUp => &[0b_0_0000_1011, 0b_0_0101_0100],
+        Symmetry::None => &[0b_1_1111_1111],
     };
     let sums = generate_sums_of_branches(
         groups,
@@ -309,7 +308,7 @@ fn count_down_tree(
 }
 
 fn generate_sums_of_branches(
-    groups: &[&[usize]],
+    groups: &[u16],
     tail_length: usize,
     snakes_calculated: &HashMap<(usize, usize), FnvHashSet<u16>>,
     hashed_branches: &mut FnvHashMap<(u16, usize), u128>,
@@ -318,7 +317,7 @@ fn generate_sums_of_branches(
     let mut group_sums = Vec::new();
     for group in groups {
         let branches: Vec<u16> =
-            branches_below(group, previous_layer, tail_length, snakes_calculated);
+            branches_below(*group, previous_layer, tail_length, snakes_calculated);
         let mut sum = 0;
         if tail_length == SEARCH_LENGTH {
             sum = branches.len() as u128;
