@@ -220,17 +220,14 @@ enum Moves {
     Left,
 }
 
+// TODO: Filter valid moves in fewer passes
 fn get_valid_snakes(tail_length: usize, head: usize) -> FnvHashSet<u16> {
-    let mut move_container: Vec<Vec<usize>> = Vec::with_capacity(tail_length + 1);
-    let mut positions_taken: Vec<usize> = Vec::with_capacity(tail_length + 1);
-    let head_x = head % MAP_WIDTH;
-    let head_y = head / MAP_WIDTH;
+    let mut move_container: Vec<u16> = Vec::with_capacity(tail_length + 1);
+    let head_pos: u16 = 1 << head;
     let all_moves = generate_moves(tail_length);
     'outer: for moves in all_moves {
-        let mut current_x = head_x;
-        let mut current_y = head_y;
-        positions_taken.clear();
-        positions_taken.push(head);
+        let mut current_pos = head_pos;
+        let mut positions_taken = head_pos;
 
         let mut non_relative_moves = Vec::with_capacity(tail_length);
 
@@ -260,43 +257,40 @@ fn get_valid_snakes(tail_length: usize, head: usize) -> FnvHashSet<u16> {
         for direction in non_relative_moves {
             match direction {
                 Moves::Up => {
-                    if current_y == 0 {
+                    if current_pos < 1 << MAP_WIDTH {
                         continue 'outer;
                     }
-                    current_y -= 1;
+                    current_pos >>= MAP_WIDTH;
                 }
                 Moves::Right => {
-                    if current_x == MAP_WIDTH - 1 {
+                    if current_pos.trailing_zeros() as usize % MAP_WIDTH == MAP_WIDTH - 1 {
                         continue 'outer;
                     }
-                    current_x += 1;
+                    current_pos <<= 1;
                 }
                 Moves::Down => {
-                    if current_y == MAP_WIDTH - 1 {
+                    if current_pos >= 1 << (MAP_WIDTH * (MAP_WIDTH - 1)) {
                         continue 'outer;
                     }
-                    current_y += 1;
+                    current_pos <<= MAP_WIDTH;
                 }
                 Moves::Left => {
-                    if current_x == 0 {
+                    if current_pos.trailing_zeros() as usize % MAP_WIDTH == 0 {
                         continue 'outer;
                     }
-                    current_x -= 1;
+                    current_pos >>= 1;
                 }
             }
-            let n = current_y * MAP_WIDTH + current_x;
-            if positions_taken.contains(&n) {
+            if positions_taken & current_pos != 0 {
                 continue 'outer;
             }
-            positions_taken.push(n)
+            positions_taken |= current_pos;
         }
-        positions_taken.sort();
-        move_container.push(positions_taken.clone());
+        move_container.push(positions_taken);
     }
     let mut possible_blocks = FnvHashSet::default();
     for snake in move_container {
-        let out = positions_to_u16(&snake);
-        insert_permutations_for_u16(out, &mut possible_blocks);
+        insert_permutations_for_u16(snake, &mut possible_blocks);
     }
     possible_blocks
 }
@@ -377,14 +371,6 @@ enum Symmetry {
     // d e f
     // g h i
     None,
-}
-
-fn positions_to_u16(positions: &[usize]) -> u16 {
-    let mut out: u16 = 0;
-    for i in positions {
-        out += 2u16.pow(*i as u32);
-    }
-    out
 }
 
 fn symmetricity(points_n: u16) -> Symmetry {
