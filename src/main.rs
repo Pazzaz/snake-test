@@ -5,18 +5,15 @@ use fnv::FnvHashSet;
 use std::collections::HashMap;
 
 const MAP_WIDTH: usize = 3;
-const SEARCH_LENGTH: usize = 6;
+const TOTAL_POSITIONS: usize = MAP_WIDTH * MAP_WIDTH;
+const SEARCH_LENGTH: usize = TOTAL_POSITIONS - 3;
 
 fn main() {
     // Prepare Hashmap
-    let snakes_calculated = prepare_hashmap();
-
+    let calculated_snakes = prepare_hashmap();
     let mut hashed_branches = FnvHashMap::default();
-    let corners = count_down_tree(1, 1 << 0, &snakes_calculated, &mut hashed_branches);
-    let side = count_down_tree(1, 1 << 1, &snakes_calculated, &mut hashed_branches);
-    let middle = count_down_tree(1, 1 << 4, &snakes_calculated, &mut hashed_branches);
-    let final_value = 4 * corners + 4 * side + middle;
-    println!("{}", final_value);
+    let test = count_down_tree(0, 0, &calculated_snakes, &mut hashed_branches);
+    println!("{}", test);
 }
 
 // Calculates the branch-sum for `previous_layer` by recursively traversing the
@@ -34,7 +31,7 @@ fn main() {
 fn count_down_tree(
     tail_length: usize,
     previous_layer: u16,
-    snakes_calculated: &HashMap<(usize, usize), FnvHashSet<u16>>,
+    calculated_snakes: &HashMap<(usize, usize), FnvHashSet<u16>>,
     hashed_branches: &mut FnvHashMap<(u16, usize), u128>,
 ) -> u128 {
     if let Some(hashed_sum) = hashed_branches.get(&(previous_layer, tail_length)) {
@@ -45,7 +42,7 @@ fn count_down_tree(
     // These groups represent position-branches which will need their sums
     // calculated. Not all branches need their sums calculated as symmetry in the
     // previous layer causes some position-branches to have the same values.
-    let groups: &[u16] = match symmetricity {
+    let mut groups: &[u16] = match symmetricity {
         Symmetry::Horizontal => &[0b_0_0000_0111, 0b_0_0011_1000],
         Symmetry::Vertical => &[0b_0_0100_1001, 0b_0_1001_0010],
         Symmetry::Full => &[0b_0_0000_0001, 0b_0_0000_0010, 0b_0_0001_0000],
@@ -65,10 +62,13 @@ fn count_down_tree(
         Symmetry::DiagonalUp => &[0b_0_0000_1011, 0b_0_0101_0100],
         Symmetry::None => &[0b_1_1111_1111],
     };
+    if TOTAL_POSITIONS == 4 {
+        groups = &[0b_1111]
+    }
     let sums = generate_sums_of_branches(
         groups,
         tail_length,
-        snakes_calculated,
+        calculated_snakes,
         hashed_branches,
         previous_layer,
     );
@@ -89,20 +89,20 @@ fn count_down_tree(
 fn generate_sums_of_branches(
     groups: &[u16],
     tail_length: usize,
-    snakes_calculated: &HashMap<(usize, usize), FnvHashSet<u16>>,
+    calculated_snakes: &HashMap<(usize, usize), FnvHashSet<u16>>,
     hashed_branches: &mut FnvHashMap<(u16, usize), u128>,
     previous_layer: u16,
 ) -> Vec<u128> {
     let mut group_sums = Vec::new();
     for group in groups {
         let branches: Vec<u16> =
-            branches_below(*group, previous_layer, tail_length, snakes_calculated);
+            branches_below(*group, previous_layer, tail_length, calculated_snakes);
         let mut sum = 0;
         if tail_length == SEARCH_LENGTH {
             sum = branches.len() as u128;
         } else {
             for layer in branches {
-                sum += count_down_tree(tail_length + 1, layer, snakes_calculated, hashed_branches);
+                sum += count_down_tree(tail_length + 1, layer, calculated_snakes, hashed_branches);
             }
         }
         group_sums.push(sum)
@@ -114,25 +114,25 @@ fn branches_below(
     main_positions: u16,
     previous_choises: u16,
     tail_length: usize,
-    snakes_calculated: &HashMap<(usize, usize), FnvHashSet<u16>>,
+    calculated_snakes: &HashMap<(usize, usize), FnvHashSet<u16>>,
 ) -> Vec<u16> {
-    let mut output: [u16; 9] = [1; 9];
+    let mut output: [u16; TOTAL_POSITIONS] = [1; TOTAL_POSITIONS];
     let mut output_n = 0;
     let mut output_vec = Vec::new();
     loop {
-        assert!(output_n <= 8);
+        assert!(output_n <= TOTAL_POSITIONS - 1);
         if output_n == 0 && main_positions & output[0] == 0 {
             output[0] <<= 1;
-            if output[0] >= (1 << 9) {
+            if output[0] >= (1 << TOTAL_POSITIONS) {
                 break;
             }
-        } else if output[output_n] >= (1 << 9) {
+        } else if output[output_n] >= (1 << TOTAL_POSITIONS) {
             // When we've iterated up to 9 then we've gone through all values
             // needed for that position and can increment the previous position
             output[output_n] = 1;
             output_n -= 1;
             output[output_n] <<= 1;
-            if output[0] == (1 << 9) {
+            if output[0] == (1 << TOTAL_POSITIONS) {
                 break;
             }
         } else if previous_choises == output[output_n]
@@ -147,12 +147,12 @@ fn branches_below(
             && could_block_all(
                 previous_choises,
                 combine_positions(&output[0..=output_n]),
-                &snakes_calculated,
+                &calculated_snakes,
                 tail_length,
             ) {
             // Add another backup value if we need it
             let mut new_value = 1;
-            while new_value != (1 << 9) {
+            while new_value != (1 << TOTAL_POSITIONS) {
                 if !output[0..=output_n].contains(&new_value) {
                     output_n += 1;
                     output[output_n] = new_value;
@@ -181,7 +181,7 @@ fn need_backup(prev_pos_choises: u16, check_pos: u16, tail_length: usize) -> boo
     let check_pos = check_pos.trailing_zeros() as usize;
     let check_pos_x = check_pos % MAP_WIDTH;
     let check_pos_y = check_pos / MAP_WIDTH;
-    for i in 0..9 {
+    for i in 0..TOTAL_POSITIONS {
         if (1 << i) & prev_pos_choises != 0 {
             let prev_pos_x = i % MAP_WIDTH;
             let prev_pos_y = i / MAP_WIDTH;
@@ -198,12 +198,12 @@ fn need_backup(prev_pos_choises: u16, check_pos: u16, tail_length: usize) -> boo
 fn could_block_all(
     head_positions: u16,
     chosen_positions: u16,
-    snakes_calculated: &HashMap<(usize, usize), FnvHashSet<u16>>,
+    calculated_snakes: &HashMap<(usize, usize), FnvHashSet<u16>>,
     tail_length: usize,
 ) -> bool {
-    for head in 0..9 {
+    for head in 0..TOTAL_POSITIONS {
         if (1 << head) & head_positions != 0 {
-            let possible_snakes = match snakes_calculated.get(&(head, tail_length)) {
+            let possible_snakes = match calculated_snakes.get(&(head, tail_length)) {
                 Some(x) => x,
                 None => panic!("WRONG"),
             };
@@ -216,15 +216,15 @@ fn could_block_all(
 }
 
 fn prepare_hashmap() -> HashMap<(usize, usize), FnvHashSet<u16>> {
-    let mut snakes_calculated = HashMap::new();
-    for o in 0..9 {
-        for p in 1..8 {
-            snakes_calculated
-                .entry((o, p))
-                .or_insert_with(|| get_snake_blocks(p, 1 << o));
+    let mut calculated_snakes = HashMap::new();
+    for snake_head_position in 0..TOTAL_POSITIONS {
+        for tail_length in 1..(TOTAL_POSITIONS - 1) {
+            calculated_snakes
+                .entry((snake_head_position, tail_length))
+                .or_insert_with(|| get_snake_blocks(tail_length, 1 << snake_head_position));
         }
     }
-    snakes_calculated
+    calculated_snakes
 }
 
 enum Moves {
@@ -319,9 +319,9 @@ fn get_snake_blocks(tail_length: usize, head: u16) -> FnvHashSet<u16> {
 }
 
 // Not neccessarily valid moves
-fn generate_moves(max: usize) -> Vec<[usize; MAP_WIDTH * MAP_WIDTH - 1]> {
-    let mut all_moves: Vec<[usize; MAP_WIDTH * MAP_WIDTH - 1]> = Vec::new();
-    let mut current_move = [0; (MAP_WIDTH * MAP_WIDTH) - 1];
+fn generate_moves(max: usize) -> Vec<[usize; TOTAL_POSITIONS - 1]> {
+    let mut all_moves: Vec<[usize; TOTAL_POSITIONS - 1]> = Vec::new();
+    let mut current_move = [0; TOTAL_POSITIONS - 1];
     let mut start = true;
     'outer: loop {
         let mut i = 0;
@@ -401,17 +401,25 @@ enum Symmetry {
 }
 
 fn symmetricity(points_n: u16) -> Symmetry {
-    let shifted_six = points_n >> 6 & points_n;
-    let horizontal = (shifted_six & 0b0000_0111) == 0b0000_0111;
-    let shifted_two = points_n >> 2 & points_n;
-    let vertical = (shifted_two & 0b0100_1001) == 0b0100_1001;
-    let shifted_four = points_n >> 4 & points_n;
-    let diagonal_down =
-        (shifted_two & 0b0010_0010) == 0b0010_0010 && (shifted_four & 0b0000_0100) == 0b0000_0100;
-    let shifted_eight = points_n >> 8 & points_n;
-    let diagonal_up = (shifted_eight & 0b0000_0001) == 0b0000_0001
-        && (shifted_four & 0b0000_0010) == 0b0000_0010
-        && (shifted_four & 0b0000_1000) == 0b0000_1000;
+    let horizontal: bool;
+    let vertical: bool;
+    let diagonal_down: bool;
+    let diagonal_up: bool;
+    if TOTAL_POSITIONS == 9 {
+        let shifted_six = points_n >> 6 & points_n;
+        let shifted_two = points_n >> 2 & points_n;
+        let shifted_four = points_n >> 4 & points_n;
+        let shifted_eight = points_n >> 8 & points_n;
+        horizontal = (shifted_six & 0b0000_0111) == 0b0000_0111;
+        vertical = (shifted_two & 0b0100_1001) == 0b0100_1001;
+        diagonal_down = (shifted_two & 0b0010_0010) == 0b0010_0010
+            && (shifted_four & 0b0000_0100) == 0b0000_0100;
+        diagonal_up = (shifted_eight & 0b0000_0001) == 0b0000_0001
+            && (shifted_four & 0b0000_0010) == 0b0000_0010
+            && (shifted_four & 0b0000_1000) == 0b0000_1000;
+    } else {
+        return Symmetry::None;
+    }
     if horizontal && vertical && diagonal_down && diagonal_up {
         Symmetry::Full
     } else if horizontal && vertical {
