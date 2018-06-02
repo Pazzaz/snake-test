@@ -19,17 +19,32 @@ fn main() {
     println!("{}", final_value);
 }
 
+// Calculates the branch-sum for `previous_layer` by recursively traversing the
+// tree. This function will be called multiple times as such:
+//                           |
+//                    count_down_tree
+//                           |
+//              generate_sums_of_branches - ...
+//              /            |            \
+//  count_down_tree  count_down_tree   count_down_tree
+//         /                 |                     \
+//       ...      generate_sums_of_branches - ...   \
+//                    /      |      \               ...
+//                  ...     ...     ...
 fn count_down_tree(
     tail_length: usize,
     previous_layer: u16,
     snakes_calculated: &HashMap<(usize, usize), FnvHashSet<u16>>,
     hashed_branches: &mut FnvHashMap<(u16, usize), u128>,
 ) -> u128 {
-    match hashed_branches.get(&(previous_layer, tail_length)) {
-        Some(value) => return *value,
-        None => {}
+    if let Some(hashed_sum) = hashed_branches.get(&(previous_layer, tail_length)) {
+        return *hashed_sum;
     }
     let symmetricity = symmetricity(previous_layer);
+
+    // These groups represent position-branches which will need their sums
+    // calculated. Not all branches need their sums calculated as symmetry in the
+    // previous layer causes some position-branches to have the same values.
     let groups: &[u16] = match symmetricity {
         Symmetry::Horizontal => &[0b_0_0000_0111, 0b_0_0011_1000],
         Symmetry::Vertical => &[0b_0_0100_1001, 0b_0_1001_0010],
@@ -220,8 +235,11 @@ enum Moves {
 }
 
 fn get_snake_blocks(tail_length: usize, head: u16) -> FnvHashSet<u16> {
-    let mut move_container: Vec<u16> = Vec::with_capacity(tail_length + 1);
+    let mut valid_snakes: Vec<u16> = Vec::with_capacity(tail_length + 1);
     let all_moves = generate_moves(tail_length);
+
+    // This will filter through all permutations of moves and keep the ones that a
+    // snake could have taken without dying.
     'outer: for moves in all_moves {
         let mut current_pos = head;
         let mut positions_taken = head;
@@ -285,10 +303,13 @@ fn get_snake_blocks(tail_length: usize, head: u16) -> FnvHashSet<u16> {
 
             positions_taken |= current_pos;
         }
-        move_container.push(positions_taken);
+        valid_snakes.push(positions_taken);
     }
+
+    // All possible positions that a snake can block are generated to allow faster
+    // lookup.
     let mut possible_blocks = FnvHashSet::default();
-    for snake in move_container {
+    for snake in valid_snakes {
         possible_blocks.insert(snake);
         for perm in 0..=0b_1_1111_1111 {
             possible_blocks.insert(snake & perm);
@@ -323,9 +344,20 @@ fn generate_moves(max: usize) -> Vec<[usize; MAP_WIDTH * MAP_WIDTH - 1]> {
     all_moves
 }
 
+// The symmetricity of a chosen set of positions allows some optimizations in
+// the calculation of the total tree-sum. If the previous layer has a kind of
+// symmetry, then some of the following position-branches can be treated as
+// equal. To be more specific, if we imagine the grid as:
+//
 // 0 1 2
 // 3 4 5
 // 6 7 8
+//
+// and the grid had a Symmetry::Full (meaning flipping/mirroring/rotating it
+// wouldn't matter) then the position-branches at 0, 2, 6 and 8 would have an
+// identical branch-sum. Each Symmetry variant has a description of which
+// branch-positions can be treated as equal in the following layer. If
+// positions have the same letter, their branch-sums are the same.
 enum Symmetry {
     // a b a
     // b c b
