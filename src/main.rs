@@ -6,7 +6,7 @@ use std::collections::HashMap;
 
 const MAP_WIDTH: usize = 3;
 const TOTAL_POSITIONS: usize = MAP_WIDTH * MAP_WIDTH;
-const SEARCH_LENGTH: usize = TOTAL_POSITIONS - 3;
+const SEARCH_LENGTH: usize = TOTAL_POSITIONS - 2;
 
 fn main() {
     // Prepare Hashmap
