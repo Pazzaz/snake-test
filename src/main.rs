@@ -206,13 +206,12 @@ fn prepare_hashmap() -> HashMap<(usize, usize), FnvHashSet<u16>> {
         for p in 1..8 {
             snakes_calculated
                 .entry((o, p))
-                .or_insert_with(|| get_valid_snakes(p, o));
+                .or_insert_with(|| get_snake_blocks(p, 1 << o));
         }
     }
     snakes_calculated
 }
 
-#[derive(Clone, Copy)]
 enum Moves {
     Up,
     Right,
@@ -220,42 +219,40 @@ enum Moves {
     Left,
 }
 
-// TODO: Filter valid moves in fewer passes
-fn get_valid_snakes(tail_length: usize, head: usize) -> FnvHashSet<u16> {
+fn get_snake_blocks(tail_length: usize, head: u16) -> FnvHashSet<u16> {
     let mut move_container: Vec<u16> = Vec::with_capacity(tail_length + 1);
-    let head_pos: u16 = 1 << head;
     let all_moves = generate_moves(tail_length);
     'outer: for moves in all_moves {
-        let mut current_pos = head_pos;
-        let mut positions_taken = head_pos;
+        let mut current_pos = head;
+        let mut positions_taken = head;
 
-        let mut non_relative_moves = Vec::with_capacity(tail_length);
+        let mut first_move = true;
 
-        // Handle the first move differently as it can move in four directions
-        let first_move = match moves[0] {
-            0 => Moves::Up,
-            1 => Moves::Right,
-            2 => Moves::Down,
-            3 => Moves::Left,
-            _ => unreachable!(),
-        };
-        let mut last_move = first_move;
-        non_relative_moves.push(first_move);
+        // rustc believes this must be initialized here.
+        let mut absolute_direction = Moves::Up;
 
-        for direction in moves.iter().take(tail_length).skip(1) {
-            let chosen_move = match (last_move, *direction) {
-                (Moves::Up, 1) | (Moves::Right, 0) | (Moves::Left, 2) => Moves::Up,
-                (Moves::Up, 2) | (Moves::Right, 1) | (Moves::Down, 0) => Moves::Right,
-                (Moves::Right, 2) | (Moves::Down, 1) | (Moves::Left, 0) => Moves::Down,
-                (Moves::Up, 0) | (Moves::Down, 2) | (Moves::Left, 1) => Moves::Left,
-                _ => unreachable!(),
+        for relative_direction in moves.iter().take(tail_length) {
+            absolute_direction = if first_move {
+                first_move = false;
+                // Handle the first move differently as it can move in four directions
+                match relative_direction {
+                    0 => Moves::Up,
+                    1 => Moves::Right,
+                    2 => Moves::Down,
+                    3 => Moves::Left,
+                    _ => unreachable!(),
+                }
+            } else {
+                // We will enter here on every iteration of the for loop except the first one.
+                match (absolute_direction, relative_direction) {
+                    (Moves::Up, 1) | (Moves::Right, 0) | (Moves::Left, 2) => Moves::Up,
+                    (Moves::Up, 2) | (Moves::Right, 1) | (Moves::Down, 0) => Moves::Right,
+                    (Moves::Right, 2) | (Moves::Down, 1) | (Moves::Left, 0) => Moves::Down,
+                    (Moves::Up, 0) | (Moves::Down, 2) | (Moves::Left, 1) => Moves::Left,
+                    _ => unreachable!(),
+                }
             };
-            last_move = chosen_move;
-            non_relative_moves.push(chosen_move);
-        }
-
-        for direction in non_relative_moves {
-            match direction {
+            match absolute_direction {
                 Moves::Up => {
                     if current_pos < 1 << MAP_WIDTH {
                         continue 'outer;
@@ -281,16 +278,21 @@ fn get_valid_snakes(tail_length: usize, head: usize) -> FnvHashSet<u16> {
                     current_pos >>= 1;
                 }
             }
+            // We cant occupy a position twice
             if positions_taken & current_pos != 0 {
                 continue 'outer;
             }
+
             positions_taken |= current_pos;
         }
         move_container.push(positions_taken);
     }
     let mut possible_blocks = FnvHashSet::default();
     for snake in move_container {
-        insert_permutations_for_u16(snake, &mut possible_blocks);
+        possible_blocks.insert(snake);
+        for perm in 0..=0b_1_1111_1111 {
+            possible_blocks.insert(snake & perm);
+        }
     }
     possible_blocks
 }
@@ -319,13 +321,6 @@ fn generate_moves(max: usize) -> Vec<[usize; MAP_WIDTH * MAP_WIDTH - 1]> {
         all_moves.push(current_move);
     }
     all_moves
-}
-
-fn insert_permutations_for_u16(list: u16, possible_blocks: &mut FnvHashSet<u16>) {
-    possible_blocks.insert(list);
-    for perm in 0..=0b_1_1111_1111 {
-        possible_blocks.insert(list & perm);
-    }
 }
 
 // 0 1 2
