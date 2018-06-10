@@ -11,119 +11,55 @@ const SEARCH_LENGTH: usize = TOTAL_POSITIONS - 2;
 fn main() {
     // Prepare Hashmap
     let calculated_snakes = prepare_hashmap();
+    println!("Hashmap generated");
     let mut hashed_branches = FnvHashMap::default();
     let test = count_down_tree(0, 0, &calculated_snakes, &mut hashed_branches);
     println!("{}", test);
 }
 
-// Calculates the branch-sum for `previous_layer` by recursively traversing the
-// tree. This function will be called multiple times as such:
-//                           |
-//                    count_down_tree
-//                           |
-//              generate_sums_of_branches - ...
-//              /            |            \
-//  count_down_tree  count_down_tree   count_down_tree
-//         /                 |                     \
-//       ...      generate_sums_of_branches - ...   \
-//                    /      |      \               ...
-//                  ...     ...     ...
 fn count_down_tree(
     tail_length: usize,
-    previous_layer: u16,
-    calculated_snakes: &HashMap<(usize, usize), FnvHashSet<u16>>,
-    hashed_branches: &mut FnvHashMap<(u16, usize), u128>,
+    previous_layer: u32,
+    calculated_snakes: &HashMap<(usize, usize), FnvHashSet<u32>>,
+    hashed_branches: &mut FnvHashMap<(u32, usize), u128>,
 ) -> u128 {
-    if let Some(hashed_sum) = hashed_branches.get(&(previous_layer, tail_length)) {
-        return *hashed_sum;
-    }
-    let symmetricity = symmetricity(previous_layer);
-
-    // These groups represent position-branches which will need their sums
-    // calculated. Not all branches need their sums calculated as symmetry in the
-    // previous layer causes some position-branches to have the same values.
-    let mut groups: &[u16] = match symmetricity {
-        Symmetry::Horizontal => &[0b_0_0000_0111, 0b_0_0011_1000],
-        Symmetry::Vertical => &[0b_0_0100_1001, 0b_0_1001_0010],
-        Symmetry::Full => &[0b_0_0000_0001, 0b_0_0000_0010, 0b_0_0001_0000],
-        Symmetry::Plus => &[
-            0b_0_0000_0001,
-            0b_0_0000_0010,
-            0b_0_0000_1000,
-            0b_0_0001_0000,
-        ],
-        Symmetry::DiagonalCrossing => &[
-            0b_0_0000_0001,
-            0b_0_0000_0100,
-            0b_0_0000_1000,
-            0b_0_0001_0000,
-        ],
-        Symmetry::DiagonalDown => &[0b_0_0010_0110, 0b_1_0001_0001],
-        Symmetry::DiagonalUp => &[0b_0_0000_1011, 0b_0_0101_0100],
-        Symmetry::None => &[0b_1_1111_1111],
-    };
-    if TOTAL_POSITIONS == 4 {
-        groups = &[0b_1111]
-    }
-    let sums = generate_sums_of_branches(
-        groups,
-        tail_length,
-        calculated_snakes,
-        hashed_branches,
-        previous_layer,
-    );
-    let total_sum = match symmetricity {
-        Symmetry::Horizontal => 2 * sums[0] + sums[1],
-        Symmetry::Vertical => 2 * sums[0] + sums[1],
-        Symmetry::Full => 4 * sums[0] + 4 * sums[1] + sums[2],
-        Symmetry::Plus => 4 * sums[0] + 2 * (sums[1] + sums[2]) + sums[3],
-        Symmetry::DiagonalCrossing => 2 * (sums[0] + sums[1]) + 4 * sums[2] + sums[3],
-        Symmetry::DiagonalDown => 2 * sums[0] + sums[1],
-        Symmetry::DiagonalUp => 2 * sums[0] + sums[1],
-        Symmetry::None => sums[0],
-    };
-    hashed_branches.insert((previous_layer, tail_length), total_sum);
-    total_sum
-}
-
-fn generate_sums_of_branches(
-    groups: &[u16],
-    tail_length: usize,
-    calculated_snakes: &HashMap<(usize, usize), FnvHashSet<u16>>,
-    hashed_branches: &mut FnvHashMap<(u16, usize), u128>,
-    previous_layer: u16,
-) -> Vec<u128> {
-    let mut group_sums = Vec::new();
-    for group in groups {
-        let branches: Vec<u16> =
-            branches_below(*group, previous_layer, tail_length, calculated_snakes);
-        let mut sum = 0;
-        if tail_length == SEARCH_LENGTH {
-            sum = branches.len() as u128;
-        } else {
-            for layer in branches {
-                sum += count_down_tree(tail_length + 1, layer, calculated_snakes, hashed_branches);
-            }
+    for check in get_variations(previous_layer).iter() {
+        if let Some(hashed_sum) = hashed_branches.get(&(*check, tail_length)) {
+            return *hashed_sum;
         }
-        group_sums.push(sum)
     }
-    group_sums
+    let branches: Vec<u32> = branches_below(previous_layer, tail_length, calculated_snakes);
+    let mut sum = 0;
+    if tail_length == SEARCH_LENGTH {
+        sum = branches.len() as u128;
+    } else {
+        for layer in branches {
+            sum += count_down_tree(
+                tail_length + 1,
+                layer,
+                calculated_snakes,
+                hashed_branches,
+            );
+        }
+    }
+    hashed_branches.insert((previous_layer, tail_length), sum);
+    sum
 }
 
 fn branches_below(
-    main_positions: u16,
-    previous_choises: u16,
+    previous_choises: u32,
     tail_length: usize,
-    calculated_snakes: &HashMap<(usize, usize), FnvHashSet<u16>>,
-) -> Vec<u16> {
-    let mut output: [u16; TOTAL_POSITIONS] = [1; TOTAL_POSITIONS];
+    calculated_snakes: &HashMap<(usize, usize), FnvHashSet<u32>>,
+) -> Vec<u32> {
+    let search_positions = 0b_111_111_111;
+    let mut output: [u32; TOTAL_POSITIONS] = [1; TOTAL_POSITIONS];
     let mut output_n = 0;
     let mut output_vec = Vec::new();
     loop {
         assert!(output_n <= TOTAL_POSITIONS - 1);
-        if output_n == 0 && main_positions & output[0] == 0 {
+        if output_n == 0 && search_positions & output[0] == 0 {
             output[0] <<= 1;
-            if output[0] >= (1 << TOTAL_POSITIONS) {
+            if output[0] >> TOTAL_POSITIONS != 0 {
                 break;
             }
         } else if output[output_n] >= (1 << TOTAL_POSITIONS) {
@@ -132,7 +68,7 @@ fn branches_below(
             output[output_n] = 1;
             output_n -= 1;
             output[output_n] <<= 1;
-            if output[0] == (1 << TOTAL_POSITIONS) {
+            if output[0] >> TOTAL_POSITIONS == 1 {
                 break;
             }
         } else if previous_choises == output[output_n]
@@ -171,13 +107,13 @@ fn branches_below(
     output_vec
 }
 
-fn combine_positions(positions: &[u16]) -> u16 {
+fn combine_positions(positions: &[u32]) -> u32 {
     positions.iter().fold(0, |acc, n| acc | n)
 }
 
 // The simplest chech for if `check_pos` may need a backup. Calculates
 // if `check_pos` is `tail_length` away from any of `prev_pos_choises`
-fn need_backup(prev_pos_choises: u16, check_pos: u16, tail_length: usize) -> bool {
+fn need_backup(prev_pos_choises: u32, check_pos: u32, tail_length: usize) -> bool {
     let check_pos = check_pos.trailing_zeros() as usize;
     let check_pos_x = check_pos % MAP_WIDTH;
     let check_pos_y = check_pos / MAP_WIDTH;
@@ -196,9 +132,9 @@ fn need_backup(prev_pos_choises: u16, check_pos: u16, tail_length: usize) -> boo
 }
 
 fn could_block_all(
-    head_positions: u16,
-    chosen_positions: u16,
-    calculated_snakes: &HashMap<(usize, usize), FnvHashSet<u16>>,
+    head_positions: u32,
+    chosen_positions: u32,
+    calculated_snakes: &HashMap<(usize, usize), FnvHashSet<u32>>,
     tail_length: usize,
 ) -> bool {
     for head in 0..TOTAL_POSITIONS {
@@ -215,13 +151,14 @@ fn could_block_all(
     false
 }
 
-fn prepare_hashmap() -> HashMap<(usize, usize), FnvHashSet<u16>> {
+fn prepare_hashmap() -> HashMap<(usize, usize), FnvHashSet<u32>> {
     let mut calculated_snakes = HashMap::new();
     for snake_head_position in 0..TOTAL_POSITIONS {
         for tail_length in 1..(TOTAL_POSITIONS - 1) {
-            calculated_snakes
-                .entry((snake_head_position, tail_length))
-                .or_insert_with(|| get_snake_blocks(tail_length, 1 << snake_head_position));
+            calculated_snakes.insert(
+                (snake_head_position, tail_length),
+                get_snake_blocks(tail_length, 1 << snake_head_position),
+            );
         }
     }
     calculated_snakes
@@ -234,8 +171,8 @@ enum Moves {
     Left,
 }
 
-fn get_snake_blocks(tail_length: usize, head: u16) -> FnvHashSet<u16> {
-    let mut valid_snakes: Vec<u16> = Vec::with_capacity(tail_length + 1);
+fn get_snake_blocks(tail_length: usize, head: u32) -> FnvHashSet<u32> {
+    let mut valid_snakes: FnvHashSet<u32> = FnvHashSet::default();
     let all_moves = generate_moves(tail_length);
 
     // This will filter through all permutations of moves and keep the ones that a
@@ -303,7 +240,7 @@ fn get_snake_blocks(tail_length: usize, head: u16) -> FnvHashSet<u16> {
 
             positions_taken |= current_pos;
         }
-        valid_snakes.push(positions_taken);
+        valid_snakes.insert(positions_taken);
     }
 
     // All possible positions that a snake can block are generated to allow faster
@@ -344,97 +281,111 @@ fn generate_moves(max: usize) -> Vec<[usize; TOTAL_POSITIONS - 1]> {
     all_moves
 }
 
-// The symmetricity of a chosen set of positions allows some optimizations in
-// the calculation of the total tree-sum. If the previous layer has a kind of
-// symmetry, then some of the following position-branches can be treated as
-// equal. To be more specific, if we imagine the grid as:
-//
-// 0 1 2
-// 3 4 5
-// 6 7 8
-//
-// and the grid had a Symmetry::Full (meaning flipping/mirroring/rotating it
-// wouldn't matter) then the position-branches at 0, 2, 6 and 8 would have an
-// identical branch-sum. Each Symmetry variant has a description of which
-// branch-positions can be treated as equal in the following layer. If
-// positions have the same letter, their branch-sums are the same.
-enum Symmetry {
-    // a b a
-    // b c b
-    // a b a
-    Full,
-
-    // a b c
-    // d e f
-    // a b c
-    Horizontal,
-
-    // a d a
-    // b e b
-    // c f c
-    Vertical,
-
-    // a b a
-    // c d c
-    // a b a
-    Plus,
-
-    // d a b
-    // a e c
-    // b c f
-    DiagonalDown,
-
-    // a b d
-    // c e c
-    // f b a
-    DiagonalUp,
-
-    // a b c
-    // b d b
-    // c b a
-    DiagonalCrossing,
-
-    // a b c
-    // d e f
-    // g h i
-    None,
+fn rotate_right(n: u32) -> u32 {
+    let shifted_left_2 = n << 2;
+    let shifted_left_4 = n << 4;
+    let shifted_left_6 = n << 6;
+    let shifted_right_2 = n >> 2;
+    let shifted_right_4 = n >> 4;
+    let shifted_right_6 = n >> 6;
+    (shifted_left_6 & 0b_001_000_000)
+        | (shifted_left_2 & 0b_000_001_000)
+        | (shifted_right_2 & 0b_000_000_001)
+        | (shifted_left_4 & 0b_010_000_000)
+        | (n & 0b_000_010_000)
+        | (shifted_right_4 & 0b_000_000_010)
+        | (shifted_left_2 & 0b_100_000_000)
+        | (shifted_right_2 & 0b_000_100_000)
+        | (shifted_right_6 & 0b_000_000_100)
 }
 
-fn symmetricity(points_n: u16) -> Symmetry {
-    let horizontal: bool;
-    let vertical: bool;
-    let diagonal_down: bool;
-    let diagonal_up: bool;
-    if TOTAL_POSITIONS == 9 {
-        let shifted_six = points_n >> 6 & points_n;
-        let shifted_two = points_n >> 2 & points_n;
-        let shifted_four = points_n >> 4 & points_n;
-        let shifted_eight = points_n >> 8 & points_n;
-        horizontal = (shifted_six & 0b0000_0111) == 0b0000_0111;
-        vertical = (shifted_two & 0b0100_1001) == 0b0100_1001;
-        diagonal_down = (shifted_two & 0b0010_0010) == 0b0010_0010
-            && (shifted_four & 0b0000_0100) == 0b0000_0100;
-        diagonal_up = (shifted_eight & 0b0000_0001) == 0b0000_0001
-            && (shifted_four & 0b0000_0010) == 0b0000_0010
-            && (shifted_four & 0b0000_1000) == 0b0000_1000;
-    } else {
-        return Symmetry::None;
+fn mirror_vertical(n: u32) -> u32 {
+    let shifted_left_2 = n << 2;
+    let shifted_right_2 = n >> 2;
+    (shifted_left_2 & 0b_100_100_100) | (n & 0b_010_010_010) | (shifted_right_2 & 0b_001_001_001)
+}
+
+fn mirror_horizontal(n: u32) -> u32 {
+    let shifted_left_6 = n << 6;
+    let shifted_right_6 = n >> 6;
+    (shifted_left_6 & 0b_111_000_000) | (n & 0b_000_111_000) | (shifted_right_6 & 0b_000_000_111)
+}
+
+fn mirror_diagonal_down(n: u32) -> u32 {
+    let shifted_left_2 = n << 2;
+    let shifted_left_4 = n << 4;
+    let shifted_right_2 = n >> 2;
+    let shifted_right_4 = n >> 4;
+    (shifted_left_2 & 0b_010_001_000)
+        | (shifted_left_4 & 0b_001_000_000)
+        | (shifted_right_4 & 0b_000_000_100)
+        | (shifted_right_2 & 0b_000_100_010)
+        | (n & 0b_100_010_001)
+}
+
+fn mirror_diagonal_up(n: u32) -> u32 {
+    let shifted_left_8 = n << 8;
+    let shifted_left_4 = n << 4;
+    let shifted_right_8 = n >> 8;
+    let shifted_right_4 = n >> 4;
+    (shifted_left_8 & 0b_100_000_000)
+        | (shifted_left_4 & 0b_010_100_000)
+        | (shifted_right_4 & 0b_000_001_010)
+        | (shifted_right_8 & 0b_000_000_001)
+        | (n & 0b_001_010_100)
+}
+
+fn get_variations(n: u32) -> [u32; 8] {
+    let n_r1 = rotate_right(n);
+    let n_r2 = rotate_right(n_r1);
+    let n_r3 = rotate_right(n_r2);
+    let mirrored_vertical = mirror_vertical(n);
+    let mirrored_horizontal = mirror_horizontal(n);
+    let mirrored_diagonal_down = mirror_diagonal_down(n);
+    let mirrored_diagonal_up = mirror_diagonal_up(n);
+    [
+        n,
+        n_r1,
+        n_r2,
+        n_r3,
+        mirrored_vertical,
+        mirrored_horizontal,
+        mirrored_diagonal_down,
+        mirrored_diagonal_up,
+    ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn rotation_right() {
+        for i in 0..=0b_111_111_111 {
+            assert_eq!(rotate_right(rotate_right(rotate_right(rotate_right(i)))), i);
+        }
     }
-    if horizontal && vertical && diagonal_down && diagonal_up {
-        Symmetry::Full
-    } else if horizontal && vertical {
-        Symmetry::Plus
-    } else if vertical {
-        Symmetry::Vertical
-    } else if horizontal {
-        Symmetry::Horizontal
-    } else if diagonal_down && diagonal_up {
-        Symmetry::DiagonalCrossing
-    } else if diagonal_up {
-        Symmetry::DiagonalUp
-    } else if diagonal_down {
-        Symmetry::DiagonalDown
-    } else {
-        Symmetry::None
+    #[test]
+    fn mirror_vert() {
+        for i in 0..=0b_111_111_111 {
+            assert_eq!(mirror_vertical(mirror_vertical(i)), i);
+        }
+    }
+    #[test]
+    fn mirror_hori() {
+        for i in 0..=0b_111_111_111 {
+            assert_eq!(mirror_horizontal(mirror_horizontal(i)), i);
+        }
+    }
+    #[test]
+    fn mirror_diag_down() {
+        for i in 0..=0b_111_111_111 {
+            assert_eq!(mirror_diagonal_down(mirror_diagonal_down(i)), i);
+        }
+    }
+    #[test]
+    fn mirror_diag_up() {
+        for i in 0..=0b_111_111_111 {
+            assert_eq!(mirror_diagonal_up(mirror_diagonal_up(i)), i);
+        }
     }
 }
