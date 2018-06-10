@@ -10,38 +10,34 @@ const SEARCH_LENGTH: usize = TOTAL_POSITIONS - 2;
 
 fn main() {
     // Prepare Hashmap
-    let calculated_snakes = prepare_hashmap();
-    println!("Hashmap generated");
+    let mut calculated_snakes = HashMap::new();
     let mut hashed_branches = FnvHashMap::default();
-    let test = count_down_tree(0, 0, &calculated_snakes, &mut hashed_branches);
+    let test = count_down_tree(0, 0, &mut calculated_snakes, &mut hashed_branches);
     println!("{}", test);
 }
 
 fn count_down_tree(
     tail_length: usize,
     previous_layer: u32,
-    calculated_snakes: &HashMap<(usize, usize), FnvHashSet<u32>>,
+    calculated_snakes: &mut HashMap<(usize, usize), FnvHashSet<u32>>,
     hashed_branches: &mut FnvHashMap<(u32, usize), u128>,
 ) -> u128 {
-    for check in get_variations(previous_layer).iter() {
+    for check in &variations(previous_layer) {
         if let Some(hashed_sum) = hashed_branches.get(&(*check, tail_length)) {
             return *hashed_sum;
         }
     }
     let branches: Vec<u32> = branches_below(previous_layer, tail_length, calculated_snakes);
-    let mut sum = 0;
-    if tail_length == SEARCH_LENGTH {
-        sum = branches.len() as u128;
+    let sum = if tail_length == SEARCH_LENGTH {
+        branches.len() as u128
     } else {
-        for layer in branches {
-            sum += count_down_tree(
-                tail_length + 1,
-                layer,
-                calculated_snakes,
-                hashed_branches,
-            );
-        }
-    }
+        branches
+            .iter()
+            .map(|layer| {
+                count_down_tree(tail_length + 1, *layer, calculated_snakes, hashed_branches)
+            })
+            .sum()
+    };
     hashed_branches.insert((previous_layer, tail_length), sum);
     sum
 }
@@ -49,28 +45,21 @@ fn count_down_tree(
 fn branches_below(
     previous_choises: u32,
     tail_length: usize,
-    calculated_snakes: &HashMap<(usize, usize), FnvHashSet<u32>>,
+    calculated_snakes: &mut HashMap<(usize, usize), FnvHashSet<u32>>,
 ) -> Vec<u32> {
-    let search_positions = 0b_111_111_111;
     let mut output: [u32; TOTAL_POSITIONS] = [1; TOTAL_POSITIONS];
     let mut output_n = 0;
     let mut output_vec = Vec::new();
     loop {
-        assert!(output_n <= TOTAL_POSITIONS - 1);
-        if output_n == 0 && search_positions & output[0] == 0 {
-            output[0] <<= 1;
-            if output[0] >> TOTAL_POSITIONS != 0 {
+        if output[output_n] == (1 << TOTAL_POSITIONS) {
+            // When we've iterated up to TOTAL_POSITIONS then we've gone through all values
+            // possible for that position and can increment the previous position
+            if output_n == 0 {
                 break;
             }
-        } else if output[output_n] >= (1 << TOTAL_POSITIONS) {
-            // When we've iterated up to 9 then we've gone through all values
-            // needed for that position and can increment the previous position
             output[output_n] = 1;
             output_n -= 1;
             output[output_n] <<= 1;
-            if output[0] >> TOTAL_POSITIONS == 1 {
-                break;
-            }
         } else if previous_choises == output[output_n]
             || output[0..output_n].contains(&output[output_n])
         {
@@ -78,15 +67,15 @@ fn branches_below(
             // and if the last element of our output exists elsewhere in our array,
             // it's an invalid value and we need to get a new one
             output[output_n] <<= 1;
-        } else if output_n + 1 < (tail_length + 2)
+        } else if output_n <= tail_length
             && need_backup(previous_choises, output[output_n], tail_length)
             && could_block_all(
                 previous_choises,
                 combine_positions(&output[0..=output_n]),
-                &calculated_snakes,
+                calculated_snakes,
                 tail_length,
             ) {
-            // Add another backup value if we need it
+            // Add another backup value
             let mut new_value = 1;
             while new_value != (1 << TOTAL_POSITIONS) {
                 if !output[0..=output_n].contains(&new_value) {
@@ -134,15 +123,14 @@ fn need_backup(prev_pos_choises: u32, check_pos: u32, tail_length: usize) -> boo
 fn could_block_all(
     head_positions: u32,
     chosen_positions: u32,
-    calculated_snakes: &HashMap<(usize, usize), FnvHashSet<u32>>,
+    calculated_snakes: &mut HashMap<(usize, usize), FnvHashSet<u32>>,
     tail_length: usize,
 ) -> bool {
     for head in 0..TOTAL_POSITIONS {
         if (1 << head) & head_positions != 0 {
-            let possible_snakes = match calculated_snakes.get(&(head, tail_length)) {
-                Some(x) => x,
-                None => panic!("WRONG"),
-            };
+            let possible_snakes = calculated_snakes
+                .entry((head, tail_length))
+                .or_insert_with(|| possible_snakes(tail_length, 1 << head as u32));
             if possible_snakes.contains(&chosen_positions) {
                 return true;
             }
@@ -151,87 +139,63 @@ fn could_block_all(
     false
 }
 
-fn prepare_hashmap() -> HashMap<(usize, usize), FnvHashSet<u32>> {
-    let mut calculated_snakes = HashMap::new();
-    for snake_head_position in 0..TOTAL_POSITIONS {
-        for tail_length in 1..(TOTAL_POSITIONS - 1) {
-            calculated_snakes.insert(
-                (snake_head_position, tail_length),
-                get_snake_blocks(tail_length, 1 << snake_head_position),
-            );
-        }
-    }
-    calculated_snakes
-}
-
-enum Moves {
-    Up,
-    Right,
-    Down,
-    Left,
-}
-
-fn get_snake_blocks(tail_length: usize, head: u32) -> FnvHashSet<u32> {
-    let mut valid_snakes: FnvHashSet<u32> = FnvHashSet::default();
-    let all_moves = generate_moves(tail_length);
+fn possible_snakes(tail_length: usize, head: u32) -> FnvHashSet<u32> {
+    let mut valid_snakes: Vec<u32> = Vec::new();
 
     // This will filter through all permutations of moves and keep the ones that a
     // snake could have taken without dying.
-    'outer: for moves in all_moves {
+    'outer: for moves in generate_moves(tail_length) {
         let mut current_pos = head;
         let mut positions_taken = head;
 
         let mut first_move = true;
 
         // rustc believes this must be initialized here.
-        let mut absolute_direction = Moves::Up;
+        let mut current_direction = 0;
 
-        for relative_direction in moves.iter().take(tail_length) {
-            absolute_direction = if first_move {
+        for input_direction in moves.iter().take(tail_length) {
+            current_direction = if first_move {
                 first_move = false;
-                // Handle the first move differently as it can move in four directions
-                match relative_direction {
-                    0 => Moves::Up,
-                    1 => Moves::Right,
-                    2 => Moves::Down,
-                    3 => Moves::Left,
-                    _ => unreachable!(),
-                }
+                // The first input_direction can be any direction 0..=3
+                *input_direction
             } else {
                 // We will enter here on every iteration of the for loop except the first one.
-                match (absolute_direction, relative_direction) {
-                    (Moves::Up, 1) | (Moves::Right, 0) | (Moves::Left, 2) => Moves::Up,
-                    (Moves::Up, 2) | (Moves::Right, 1) | (Moves::Down, 0) => Moves::Right,
-                    (Moves::Right, 2) | (Moves::Down, 1) | (Moves::Left, 0) => Moves::Down,
-                    (Moves::Up, 0) | (Moves::Down, 2) | (Moves::Left, 1) => Moves::Left,
+                // The following `input_direction`s will be given relative to our current
+                // direction so they will have a value 0..=2
+                match (current_direction, input_direction) {
+                    (0, 1) | (1, 0) | (3, 2) => 0,
+                    (0, 2) | (1, 1) | (2, 0) => 1,
+                    (1, 2) | (2, 1) | (3, 0) => 2,
+                    (0, 0) | (2, 2) | (3, 1) => 3,
                     _ => unreachable!(),
                 }
             };
-            match absolute_direction {
-                Moves::Up => {
+            match current_direction {
+                0 => {
                     if current_pos < 1 << MAP_WIDTH {
                         continue 'outer;
                     }
                     current_pos >>= MAP_WIDTH;
                 }
-                Moves::Right => {
+                1 => {
                     if current_pos.trailing_zeros() as usize % MAP_WIDTH == MAP_WIDTH - 1 {
                         continue 'outer;
                     }
                     current_pos <<= 1;
                 }
-                Moves::Down => {
+                2 => {
                     if current_pos >= 1 << (MAP_WIDTH * (MAP_WIDTH - 1)) {
                         continue 'outer;
                     }
                     current_pos <<= MAP_WIDTH;
                 }
-                Moves::Left => {
+                3 => {
                     if current_pos.trailing_zeros() as usize % MAP_WIDTH == 0 {
                         continue 'outer;
                     }
                     current_pos >>= 1;
                 }
+                _ => unreachable!(),
             }
             // We cant occupy a position twice
             if positions_taken & current_pos != 0 {
@@ -240,7 +204,7 @@ fn get_snake_blocks(tail_length: usize, head: u32) -> FnvHashSet<u32> {
 
             positions_taken |= current_pos;
         }
-        valid_snakes.insert(positions_taken);
+        valid_snakes.push(positions_taken);
     }
 
     // All possible positions that a snake can block are generated to allow faster
@@ -248,7 +212,7 @@ fn get_snake_blocks(tail_length: usize, head: u32) -> FnvHashSet<u32> {
     let mut possible_blocks = FnvHashSet::default();
     for snake in valid_snakes {
         possible_blocks.insert(snake);
-        for perm in 0..=0b_1_1111_1111 {
+        for perm in 0..=0b_111_111_111 {
             possible_blocks.insert(snake & perm);
         }
     }
@@ -265,10 +229,10 @@ fn generate_moves(max: usize) -> Vec<[usize; TOTAL_POSITIONS - 1]> {
         if start {
             start = false
         } else {
-            current_move[i] += 1;
+            current_move[0] += 1;
         }
 
-        while (i == 0 && current_move[0] == 4) || (i != 0 && current_move[i] == 3) {
+        while i != 0 && current_move[i] == 3 || current_move[0] == 4 {
             current_move[i] = 0;
             i += 1;
             if i == max {
@@ -335,7 +299,7 @@ fn mirror_diagonal_up(n: u32) -> u32 {
         | (n & 0b_001_010_100)
 }
 
-fn get_variations(n: u32) -> [u32; 8] {
+fn variations(n: u32) -> [u32; 8] {
     let n_r1 = rotate_right(n);
     let n_r2 = rotate_right(n_r1);
     let n_r3 = rotate_right(n_r2);
@@ -387,5 +351,11 @@ mod tests {
         for i in 0..=0b_111_111_111 {
             assert_eq!(mirror_diagonal_up(mirror_diagonal_up(i)), i);
         }
+    }
+
+    #[test]
+    fn gen() {
+        let moves = generate_moves(3);
+        assert_eq!(moves.len(), 36);
     }
 }
