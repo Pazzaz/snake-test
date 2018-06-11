@@ -211,8 +211,7 @@ fn possible_snakes(tail_length: usize, head: u32) -> FnvHashSet<u32> {
     // lookup.
     let mut possible_blocks = FnvHashSet::default();
     for snake in valid_snakes {
-        possible_blocks.insert(snake);
-        for perm in 0..=0b_111_111_111 {
+        for perm in 0..(1 << TOTAL_POSITIONS) {
             possible_blocks.insert(snake & perm);
         }
     }
